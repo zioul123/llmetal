@@ -6,16 +6,43 @@
 #include <iostream>
 #include <stdexcept>
 
-void print_metal_device() {
-    @autoreleasepool {
-        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+namespace llmetal {
 
-        if (device == nil) {
-            throw std::runtime_error("Metal is unavailable: no default Metal device was found");
-        }
+class MetalContext::Impl {
+public:
+    id<MTLDevice> device = nil;
+    id<MTLCommandQueue> command_queue = nil;
+};
 
-        const char* device_name = device.name.UTF8String;
+MetalContext::MetalContext()
+    : impl_(std::make_unique<Impl>()) {
+    impl_->device = MTLCreateSystemDefaultDevice();
 
-        std::cout << "Metal device: " << (device_name != nullptr ? device_name : "<unknown>") << std::endl;
+    if (impl_->device == nil) {
+        throw std::runtime_error("Metal is unavailable: no default Metal device was found");
+    }
+
+    impl_->command_queue = [impl_->device newCommandQueue];
+
+    if (impl_->command_queue == nil) {
+        throw std::runtime_error("Failed to create Metal command queue");
     }
 }
+
+MetalContext::~MetalContext() = default;
+MetalContext::MetalContext(MetalContext&& other) noexcept = default;
+MetalContext& MetalContext::operator=(MetalContext&& other) noexcept = default;
+
+std::string MetalContext::device_name() const {
+    const char* device_name = impl_->device.name.UTF8String;
+    return device_name != nullptr ? device_name : "<unknown>";
+}
+
+void* MetalContext::device_handle() const {
+    return (__bridge void*)impl_->device;
+}
+void* MetalContext::command_queue_handle() const {
+    return (__bridge void*)impl_->command_queue;
+}
+
+} // namespace llmetal

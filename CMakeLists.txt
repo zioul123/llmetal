@@ -10,6 +10,7 @@ target_sources(LLMetal
   PRIVATE
     src/main.cpp
     src/metal_context.mm
+    src/vector_add.mm
 )
 
 target_include_directories(LLMetal
@@ -17,7 +18,16 @@ target_include_directories(LLMetal
     include
 )
 
-target_compile_features(LLMetal PRIVATE cxx_std_20)
+# target_compile_features(LLMetal PRIVATE cxx_std_20)
+set_target_properties(LLMetal PROPERTIES 
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+
+  OBJCXX_STANDARD 20
+  OBJCXX_STANDARD_REQUIRED ON
+  OBJCXX_EXTENSIONS OFF
+)
 
 target_compile_definitions(LLMetal
   PRIVATE 
@@ -38,3 +48,31 @@ target_link_libraries(LLMetal
 #     ${METAL_FRAMEWORK}
 #     ${FOUNDATION_FRAMEWORK}
 # )
+
+# === Metal shader compilation ===
+find_program(XCRUN xcrun REQUIRED)
+
+set(METAL_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vector_add.metal)
+set(METAL_AIR ${CMAKE_CURRENT_BINARY_DIR}/shaders/vector_add.air)
+set(METAL_LIB ${CMAKE_CURRENT_BINARY_DIR}/shaders/vector_add.metallib)
+
+add_custom_command(
+  OUTPUT ${METAL_AIR}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/shaders
+  COMMAND ${XCRUN} metal -c ${METAL_SOURCE} -o ${METAL_AIR}
+  DEPENDS ${METAL_SOURCE}
+  VERBATIM
+)
+
+add_custom_command(
+  OUTPUT ${METAL_LIB}
+  COMMAND ${XCRUN} metallib ${METAL_AIR} -o ${METAL_LIB}
+  DEPENDS ${METAL_AIR}
+  VERBATIM
+)
+
+add_custom_target(MetalLibs ALL
+  DEPENDS ${METAL_LIB}
+)
+
+add_dependencies(LLMetal MetalLibs)
