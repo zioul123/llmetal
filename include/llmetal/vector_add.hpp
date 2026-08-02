@@ -12,10 +12,8 @@ class VectorAddKernel {
 public:
     VectorAddKernel(MetalContext& context);
     ~VectorAddKernel();
-
     VectorAddKernel(const VectorAddKernel&) = delete;
     VectorAddKernel& operator=(const VectorAddKernel&) = delete;
-
     VectorAddKernel(VectorAddKernel&&) noexcept;
     VectorAddKernel& operator=(VectorAddKernel&&) noexcept;
 

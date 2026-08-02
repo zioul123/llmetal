@@ -49,7 +49,9 @@ int main() {
         llmetal::VectorAddKernel kernel(context);
 
         // Exercises small work, a larger dispatch, and reuse after shrinking.
-        return run_case(kernel, 3) && run_case(kernel, 257) && run_case(kernel, 19)
+        return run_case(kernel, 3) 
+            && run_case(kernel, 257)
+            && run_case(kernel, 19)
             ? 0
             : 1;
     } catch (const std::exception& error) {

@@ -16,9 +16,7 @@ namespace llmetal {
 class VectorAddKernel::Impl {
 public:
     explicit Impl(MetalContext& context): metalContext(context) {}
-
     MetalContext& metalContext;
-
 private:
     id<MTLComputePipelineState> pipeline_state = nil;
     id<MTLBuffer> bufferLhs = nil;
@@ -26,15 +24,12 @@ private:
     id<MTLBuffer> bufferOut = nil;
     std::size_t capacity_elements = 0;
     std::size_t element_count = 0;
-
 friend class VectorAddKernel;
 };
 
 VectorAddKernel::VectorAddKernel(MetalContext& context)
     : impl_(std::make_unique<Impl>(context)) {
     NSError* error = nil;
-    
-    // Yoink references from the metal context
     id<MTLDevice> device = (__bridge id<MTLDevice>)context.device_handle();
 
     // We need to manually get the library from the shaders folder
@@ -107,10 +102,8 @@ void VectorAddKernel::upload(
             + " and " + std::to_string(rhs.size())
         );
     }
-    void* lhsData = (void*) impl_->bufferLhs.contents;
-    void* rhsData = (void*) impl_->bufferRhs.contents;
-    std::memcpy(lhsData, lhs.data(), lhs.size() * sizeof(float));
-    std::memcpy(rhsData, rhs.data(), rhs.size() * sizeof(float));
+    std::memcpy([impl_->bufferLhs contents], lhs.data(), lhs.size() * sizeof(float));
+    std::memcpy([impl_->bufferRhs contents], rhs.data(), rhs.size() * sizeof(float));
 }
 
 void VectorAddKernel::run() {
@@ -150,8 +143,7 @@ void VectorAddKernel::download(std::span<float> output) {
             + ", got: " + std::to_string(output.size())
         );
     }
-    float* result = static_cast<float*>([impl_->bufferOut contents]);
-    std::copy_n(result, impl_->element_count, output.data());
+    std::memcpy(output.data(), [impl_->bufferOut contents], impl_->element_count * sizeof(float));
 }
 
 void VectorAddKernel::encodeAddCommand(void* _computeEncoder) {

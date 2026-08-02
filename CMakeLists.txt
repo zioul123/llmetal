@@ -56,27 +56,38 @@ target_link_libraries(LLMetal
 # === Metal shader compilation ===
 find_program(XCRUN xcrun REQUIRED)
 
-set(METAL_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vector_add.metal)
-set(METAL_AIR ${CMAKE_CURRENT_BINARY_DIR}/shaders/vector_add.air)
-set(METAL_LIB ${CMAKE_CURRENT_BINARY_DIR}/shaders/vector_add.metallib)
-
-add_custom_command(
-  OUTPUT ${METAL_AIR}
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/shaders
-  COMMAND ${XCRUN} metal -c ${METAL_SOURCE} -o ${METAL_AIR}
-  DEPENDS ${METAL_SOURCE}
-  VERBATIM
+set(LLMETAL_SHADER_NAMES
+  vector_add
+  gemv
 )
 
-add_custom_command(
-  OUTPUT ${METAL_LIB}
-  COMMAND ${XCRUN} metallib ${METAL_AIR} -o ${METAL_LIB}
-  DEPENDS ${METAL_AIR}
-  VERBATIM
-)
+set(LLMETAL_METALLIBS)
+
+foreach(shader_name IN LISTS LLMETAL_SHADER_NAMES)
+  set(shader_source ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader_name}.metal)
+  set(shader_air ${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader_name}.air)
+  set(shader_metallib ${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader_name}.metallib)
+
+  add_custom_command(
+    OUTPUT ${shader_air}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/shaders
+    COMMAND ${XCRUN} metal -c ${shader_source} -o ${shader_air}
+    DEPENDS ${shader_source}
+    VERBATIM
+  )
+
+  add_custom_command(
+    OUTPUT ${shader_metallib}
+    COMMAND ${XCRUN} metallib ${shader_air} -o ${shader_metallib}
+    DEPENDS ${shader_air}
+    VERBATIM
+  )
+
+  list(APPEND LLMETAL_METALLIBS ${shader_metallib})
+endforeach()
 
 add_custom_target(MetalLibs ALL
-  DEPENDS ${METAL_LIB}
+  DEPENDS ${LLMETAL_METALLIBS}
 )
 
 add_dependencies(LLMetal MetalLibs)
@@ -85,6 +96,8 @@ add_dependencies(LLMetal MetalLibs)
 include(CTest)
 
 if(BUILD_TESTING)
+  # --- LLMetalVectorAddSmoke ---
+
   add_executable(LLMetalVectorAddSmoke)
 
   target_sources(LLMetalVectorAddSmoke
@@ -122,4 +135,44 @@ if(BUILD_TESTING)
   add_dependencies(LLMetalVectorAddSmoke MetalLibs)
 
   add_test(NAME vector_add_smoke COMMAND LLMetalVectorAddSmoke)
+
+  # --- LLMetalGemvSmoke ---
+
+  add_executable(LLMetalGemvSmoke)
+
+  target_sources(LLMetalGemvSmoke
+    PRIVATE
+      tests/gemv_smoke.cpp
+      src/metal_context.mm
+      src/gemv.mm
+  )
+
+  target_include_directories(LLMetalGemvSmoke
+    PRIVATE
+      include
+  )
+
+  set_target_properties(LLMetalGemvSmoke PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalGemvSmoke PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalGemvSmoke
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+  )
+
+  add_dependencies(LLMetalGemvSmoke MetalLibs)
+
+  add_test(NAME gemv_smoke COMMAND LLMetalGemvSmoke)
 endif()
