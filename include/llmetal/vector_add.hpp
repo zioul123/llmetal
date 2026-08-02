@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <span>
 #include <memory>
 
@@ -18,27 +19,17 @@ public:
     VectorAddKernel(VectorAddKernel&&) noexcept;
     VectorAddKernel& operator=(VectorAddKernel&&) noexcept;
 
-    void run(
-        std::span<const float> lhs,
-        std::span<const float> rhs,
-        std::span<float> output   
-    );
+    void prepare(std::size_t element_count);
+    void upload(std::span<const float> lhs, std::span<const float> rhs);
+    void run();
+    void download(std::span<float> output);
     
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;
     
-    void encodeAddCommand(
-        // MTLComputeCommandEncoder
-        void* computeEncoder,
-         // MTLBuffer
-        void* _bufferLhs,
-        // MTLBuffer
-        void* _bufferRhs,
-        // MTLBuffer
-        void* _bufferOutput,
-        unsigned int elementCount
-    ); 
+    // MTLComputeCommandEncoder
+    void encodeAddCommand(void* computeEncoder); 
 };
 
 } // namespace llmetal

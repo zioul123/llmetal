@@ -34,6 +34,10 @@ target_compile_definitions(LLMetal
     LLMETAL_BUILD_TYPE="$<CONFIG>"
 )
 
+target_compile_options(LLMetal PRIVATE
+  "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+)
+
 target_link_libraries(LLMetal
   PRIVATE
     "-framework Metal"
@@ -76,3 +80,46 @@ add_custom_target(MetalLibs ALL
 )
 
 add_dependencies(LLMetal MetalLibs)
+
+# === Tests ===
+include(CTest)
+
+if(BUILD_TESTING)
+  add_executable(LLMetalVectorAddSmoke)
+
+  target_sources(LLMetalVectorAddSmoke
+    PRIVATE
+      tests/vector_add_smoke.cpp
+      src/metal_context.mm
+      src/vector_add.mm
+  )
+
+  target_include_directories(LLMetalVectorAddSmoke
+    PRIVATE
+      include
+  )
+
+  set_target_properties(LLMetalVectorAddSmoke PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalVectorAddSmoke PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalVectorAddSmoke
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+  )
+
+  add_dependencies(LLMetalVectorAddSmoke MetalLibs)
+
+  add_test(NAME vector_add_smoke COMMAND LLMetalVectorAddSmoke)
+endif()

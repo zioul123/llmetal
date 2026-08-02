@@ -30,8 +30,6 @@ MetalContext::MetalContext()
 }
 
 MetalContext::~MetalContext() = default;
-MetalContext::MetalContext(MetalContext&& other) noexcept = default;
-MetalContext& MetalContext::operator=(MetalContext&& other) noexcept = default;
 
 std::string MetalContext::device_name() const {
     const char* device_name = impl_->device.name.UTF8String;

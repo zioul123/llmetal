@@ -13,8 +13,8 @@ public:
     MetalContext(const MetalContext&) = delete;
     MetalContext& operator=(const MetalContext&) = delete;
 
-    MetalContext(MetalContext&&) noexcept;
-    MetalContext& operator=(MetalContext&&) noexcept;
+    MetalContext(MetalContext&&) = delete;
+    MetalContext& operator=(MetalContext&&) = delete;
     
     [[nodiscard]] std::string device_name() const;
 

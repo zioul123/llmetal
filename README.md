@@ -22,3 +22,8 @@ Then, you can run it using:
 ```bash
 ./build/debug/LLMetal
 ```
+
+You can run tests with:
+```bash
+ctest --test-dir build/debug --output-on-failure
+```
