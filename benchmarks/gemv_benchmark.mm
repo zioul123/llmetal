@@ -2,6 +2,7 @@
 #include "llmetal/gemv_shape.hpp"
 #include "llmetal/metal_context.hpp"
 #include "llmetal/gemv_naive.hpp"
+#include "llmetal/gemv_interleaved.hpp"
 #include "llmetal/cpu/gemv.hpp"
 
 #include <cmath>
@@ -252,6 +253,7 @@ int main() {
         llmetal::MetalContext context;
         llmetal::GemvNaiveKernel naiveKernel(context);
         llmetal::GemvMpsKernel mpsKernel(context);
+        llmetal::GemvInterleavedKernel interleavedKernel(context);
         
         BenchmarkDetails details[] = {
             { "1024x1024", 1024, 1024},
@@ -291,13 +293,14 @@ int main() {
             // Validate the implementations
             auto naiveValidation = Validate::run(naiveKernel, fixture, "naive");
             auto mpsValidation = Validate::run(mpsKernel, fixture, "mps");
+            auto interleavedValidation = Validate::run(interleavedKernel, fixture, "interleaved");
             // ValidationResult transposedValidation = Validate::transposed(context, config);
             // ValidationResult interleavedValidation = Validate::interleaved(context, config);
 
             // Print validation results
             std::cout << "Validation:\n";
             for (auto const &result : {
-                naiveValidation, mpsValidation, // transposedValidation, interleavedValidation
+                naiveValidation, mpsValidation, interleavedValidation // transposedValidation, interleavedValidation
             }) {
                 if (!result.valid) {
                     std::cerr << "  " << result.backend << ": failed - " << result.error << '\n';
@@ -305,7 +308,7 @@ int main() {
                     std::cout << "  " << result.backend << ": passed\n";
                 }
             }
-            if (!naiveValidation.valid || !mpsValidation.valid) {
+            if (!naiveValidation.valid || !mpsValidation.valid || !interleavedValidation.valid) {
                 std::cerr << "Skipping benchmarks because validation failed." << std::endl;
                 return 1;
             }
@@ -314,15 +317,15 @@ int main() {
             
             auto naiveBenchmark = Benchmark::run(naiveKernel, config, "naive");
             auto mpsBenchmark = Benchmark::run(mpsKernel, config, "mps");
+            auto interleavedBenchmark = Benchmark::run(interleavedKernel, config, "interleaved");
             // BenchmarkResult transposedBenchmark = Benchmark::transposed(context, config);
-            // BenchmarkResult interleavedBenchmark = Benchmark::interleaved(context, config);
             std::cout << std::endl;
 
             // Table header
             naiveBenchmark.printHeader();
 
             for (auto const &result : {
-                naiveBenchmark, mpsBenchmark, // transposedBenchmark, interleavedBenchmark
+                naiveBenchmark, mpsBenchmark, interleavedBenchmark, // transposedBenchmark
             }) {
                 result.printRow();
             }

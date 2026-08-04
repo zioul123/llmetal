@@ -28,3 +28,10 @@ You can run tests with:
 ```bash
 ctest --test-dir build/debug --output-on-failure
 ```
+
+Or manually run individual tests:
+```bash
+./build/debug/LLMetalVectorAddSmoke
+./build/debug/LLMetalGemvSmoke
+./build/debug/LLMetalGemvInterleaveSmoke
+```

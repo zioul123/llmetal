@@ -102,6 +102,7 @@ if(LLMETAL_BUILD_BENCHMARKS)
     src/metal_context.mm
     src/gemv_naive.mm
     src/gemv_mps.mm
+    src/gemv_interleaved.mm
     src/cpu/gemv.cpp
     src/metal_job.mm
   )
@@ -187,6 +188,7 @@ if(BUILD_TESTING)
       src/metal_context.mm
       src/gemv_naive.mm
       src/gemv_mps.mm
+      src/gemv_interleaved.mm
       src/metal_job.mm
   )
 
@@ -219,4 +221,46 @@ if(BUILD_TESTING)
   add_dependencies(LLMetalGemvSmoke MetalLibs)
 
   add_test(NAME gemv_smoke COMMAND LLMetalGemvSmoke)
+
+  # --- LLMetalGemvInterleaveSmoke ---
+
+  add_executable(LLMetalGemvInterleaveSmoke)
+
+  target_sources(LLMetalGemvInterleaveSmoke
+    PRIVATE
+      tests/gemv_interleave_smoke.cpp
+      src/metal_context.mm
+      src/gemv_interleaved.mm
+      src/metal_job.mm
+  )
+
+  target_include_directories(LLMetalGemvInterleaveSmoke
+    PRIVATE
+      include
+  )
+
+  set_target_properties(LLMetalGemvInterleaveSmoke PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalGemvInterleaveSmoke PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalGemvInterleaveSmoke
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalGemvInterleaveSmoke MetalLibs)
+
+  add_test(NAME gemv_interleave_smoke COMMAND LLMetalGemvInterleaveSmoke)
 endif()

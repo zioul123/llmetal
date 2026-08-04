@@ -1,19 +1,22 @@
+
 #include <iostream>
+#include <objc/NSObjCRuntime.h>
 #include <stdexcept>
 #include <cstddef>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <algorithm>
 
 #include <llmetal/metal_context.hpp>
-#include <llmetal/gemv_naive.hpp>
+#include <llmetal/gemv_interleaved.hpp>
 
 #include <Foundation/Foundation.h>
 #include <Metal/Metal.h>
 
 namespace llmetal {
 
-class GemvNaiveKernel::Impl {
+class GemvInterleavedKernel::Impl {
 public:
     explicit Impl(MetalContext& context): metalContext(context) {}
     MetalContext& metalContext;
@@ -27,10 +30,10 @@ private:
     std::size_t capacityVector = 0;
     std::size_t capacityOutput = 0;
     GemvShape gemvShape = {0, 0};
-friend class GemvNaiveKernel;
+friend class GemvInterleavedKernel;
 };
 
-GemvNaiveKernel::GemvNaiveKernel(MetalContext& context)
+GemvInterleavedKernel::GemvInterleavedKernel(MetalContext& context)
     : impl_(std::make_unique<Impl>(context)) {
     NSError* error = nil;
     id<MTLDevice> device = (__bridge id<MTLDevice>)context.device_handle();
@@ -48,7 +51,7 @@ GemvNaiveKernel::GemvNaiveKernel(MetalContext& context)
     }
 
     // From `shaders/gemv.metal`
-    id<MTLFunction> function = [library newFunctionWithName:@"gemv_naive"];
+    id<MTLFunction> function = [library newFunctionWithName:@"gemv_interleaved"];
     if (function == nil) throw std::runtime_error("Function not found");
 
     // Create the pipeline state
@@ -61,11 +64,34 @@ GemvNaiveKernel::GemvNaiveKernel(MetalContext& context)
     }
 }
 
-GemvNaiveKernel::~GemvNaiveKernel() = default;
-GemvNaiveKernel::GemvNaiveKernel(GemvNaiveKernel&&) noexcept = default;
-GemvNaiveKernel& GemvNaiveKernel::operator=(GemvNaiveKernel&&) noexcept = default;
+GemvInterleavedKernel::~GemvInterleavedKernel() = default;
+GemvInterleavedKernel::GemvInterleavedKernel(GemvInterleavedKernel&&) noexcept = default;
+GemvInterleavedKernel& GemvInterleavedKernel::operator=(GemvInterleavedKernel&&) noexcept = default;
 
-void GemvNaiveKernel::prepare(GemvShape shape) {
+std::vector<float> interleave(
+    std::span<const float> matrix,
+    std::size_t row_groups,
+    std::size_t threads_per_row_group,
+    GemvShape shape
+) {
+    // We will interleave this matrix. High startup cost, but we'd store it in this format in future.
+    std::vector<float> interleaved_matrix(matrix.size());
+    std::size_t toIndex = 0;
+    for (std::size_t g = 0; g < row_groups; ++g) {
+        for (std::size_t c = 0; c < shape.cols; ++c) {
+            for (std::size_t t = 0; t < threads_per_row_group; ++t) {
+                std::size_t row = g * threads_per_row_group + t;
+                std::size_t fromIndex = row * shape.cols + c;
+                if (row < shape.rows) {
+                    interleaved_matrix[toIndex++] = matrix[fromIndex];
+                }
+            }
+        }
+    }
+    return interleaved_matrix;
+}
+
+void GemvInterleavedKernel::prepare(GemvShape shape) {
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (shape.cols == 0 || shape.rows == 0) throw std::runtime_error("Invalid gemv shape");
     
@@ -101,7 +127,10 @@ void GemvNaiveKernel::prepare(GemvShape shape) {
     impl_->gemvShape = shape;
 }
 
-void GemvNaiveKernel::upload_matrix(std::span<const float> matrix) {
+void GemvInterleavedKernel::upload_matrix(
+    std::span<const float> matrix,
+    bool isAlreadyInterleaved
+) {
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (matrix.size() != impl_->gemvShape.cols * impl_->gemvShape.rows) {
         throw std::runtime_error(
@@ -110,10 +139,23 @@ void GemvNaiveKernel::upload_matrix(std::span<const float> matrix) {
             + ", got: " + std::to_string(matrix.size())
         );
     }
-    std::memcpy([impl_->bufferMatrix contents], matrix.data(), matrix.size() * sizeof(float));
+
+    if (isAlreadyInterleaved) {
+        std::memcpy([impl_->bufferMatrix contents], matrix.data(), matrix.size() * sizeof(float));
+        return;
+    }
+
+    NSUInteger threads_per_group = [impl_->pipeline_state threadExecutionWidth];
+    NSUInteger groups_in_grid = (impl_->gemvShape.rows + threads_per_group - 1) / threads_per_group;
+
+    // We will interleave this matrix. High startup cost, but we'd store it in this format in future.
+    std::vector<float> interleaved_matrix = interleave(
+        matrix, groups_in_grid, threads_per_group, impl_->gemvShape
+    );
+    std::memcpy([impl_->bufferMatrix contents], interleaved_matrix.data(), matrix.size() * sizeof(float));
 }
 
-void GemvNaiveKernel::upload_vector(std::span<const float> vector) {
+void GemvInterleavedKernel::upload_vector(std::span<const float> vector) {
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (vector.size() != impl_->gemvShape.cols) {
         throw std::runtime_error(
@@ -125,7 +167,7 @@ void GemvNaiveKernel::upload_vector(std::span<const float> vector) {
     std::memcpy([impl_->bufferVector contents], vector.data(), vector.size() * sizeof(float));
 }
 
-llmetal::MetalJob GemvNaiveKernel::submit_repeated(std::size_t repeats) {
+llmetal::MetalJob GemvInterleavedKernel::submit_repeated(std::size_t repeats) {
     if (repeats == 0) throw std::runtime_error("Invalid repeats");
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (impl_->gemvShape.cols == 0 || impl_->gemvShape.rows == 0) throw std::runtime_error("Invalid gemv shape");
@@ -147,8 +189,8 @@ llmetal::MetalJob GemvNaiveKernel::submit_repeated(std::size_t repeats) {
     [computeEncoder setBytes:&impl_->gemvShape.cols length:sizeof(uint) atIndex:4];
 
     MTLSize gridSize = MTLSizeMake(impl_->gemvShape.rows, 1, 1);
-    // NSUInteger upperBound = impl_->pipeline_state.maxTotalThreadsPerThreadgroup;
-    NSUInteger upperBound = [impl_->pipeline_state threadExecutionWidth];
+    NSUInteger upperBound = impl_->pipeline_state.maxTotalThreadsPerThreadgroup;
+    // NSUInteger upperBound = [impl_->pipeline_state threadExecutionWidth];
     upperBound = (upperBound > gridSize.width) ? gridSize.width : upperBound;
     MTLSize threadGroupSize = MTLSizeMake(upperBound, 1, 1);
 
@@ -164,11 +206,11 @@ llmetal::MetalJob GemvNaiveKernel::submit_repeated(std::size_t repeats) {
     return llmetal::MetalJob((__bridge void*) commandBuffer);
 }
 
-llmetal::MetalJob GemvNaiveKernel::submit() {
+llmetal::MetalJob GemvInterleavedKernel::submit() {
     return submit_repeated(1);
 }
 
-void GemvNaiveKernel::download(std::span<float> output) {
+void GemvInterleavedKernel::download(std::span<float> output) {
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (output.size() < impl_->gemvShape.rows) {
         throw std::runtime_error(
@@ -180,7 +222,7 @@ void GemvNaiveKernel::download(std::span<float> output) {
     std::memcpy(output.data(), [impl_->bufferOutput contents], impl_->gemvShape.rows * sizeof(float));
 }
 
-bool GemvNaiveKernel::in_progress() const noexcept {
+bool GemvInterleavedKernel::in_progress() const noexcept {
     if (impl_->lastCommandBuffer == nil) {
         return false;
     }
