@@ -21,6 +21,7 @@ cmake --build --preset debug
 Then, you can run it using:
 ```bash
 ./build/debug/LLMetal
+./build/debug/LLMetalGemvBenchmark
 ```
 
 You can run tests with:

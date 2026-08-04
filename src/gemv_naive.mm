@@ -6,28 +6,31 @@
 #include <algorithm>
 
 #include <llmetal/metal_context.hpp>
-#include <llmetal/gemv.hpp>
+#include <llmetal/gemv_naive.hpp>
 
 #include <Foundation/Foundation.h>
 #include <Metal/Metal.h>
 
 namespace llmetal {
 
-class GemvKernel::Impl {
+class GemvNaiveKernel::Impl {
 public:
     explicit Impl(MetalContext& context): metalContext(context) {}
     MetalContext& metalContext;
 private:
     id<MTLComputePipelineState> pipeline_state = nil;
+    id<MTLCommandBuffer> lastCommandBuffer = nil;
     id<MTLBuffer> bufferMatrix = nil;
     id<MTLBuffer> bufferVector = nil;
     id<MTLBuffer> bufferOutput = nil;
-    std::size_t capacity_elements = 0;
+    std::size_t capacityMatrix = 0;
+    std::size_t capacityVector = 0;
+    std::size_t capacityOutput = 0;
     GemvShape gemvShape = {0, 0};
-friend class GemvKernel;
+friend class GemvNaiveKernel;
 };
 
-GemvKernel::GemvKernel(MetalContext& context)
+GemvNaiveKernel::GemvNaiveKernel(MetalContext& context)
     : impl_(std::make_unique<Impl>(context)) {
     NSError* error = nil;
     id<MTLDevice> device = (__bridge id<MTLDevice>)context.device_handle();
@@ -58,40 +61,48 @@ GemvKernel::GemvKernel(MetalContext& context)
     }
 }
 
-GemvKernel::~GemvKernel() = default;
-GemvKernel::GemvKernel(GemvKernel&&) noexcept = default;
-GemvKernel& GemvKernel::operator=(GemvKernel&&) noexcept = default;
+GemvNaiveKernel::~GemvNaiveKernel() = default;
+GemvNaiveKernel::GemvNaiveKernel(GemvNaiveKernel&&) noexcept = default;
+GemvNaiveKernel& GemvNaiveKernel::operator=(GemvNaiveKernel&&) noexcept = default;
 
-void GemvKernel::prepare(GemvShape shape) {
-    if (shape.cols <= 0 || shape.rows <= 0) { 
-        throw std::runtime_error("Invalid gemv shape");
-    }
+void GemvNaiveKernel::prepare(GemvShape shape) {
+    if (in_progress()) throw std::runtime_error("Kernel is already in progress");
+    if (shape.cols == 0 || shape.rows == 0) throw std::runtime_error("Invalid gemv shape");
     
-    std::size_t element_count = shape.cols * shape.rows;
-
-    // Our buffers already have sufficient capacity - just update the shape
-    if (element_count <= impl_->capacity_elements) {
-        impl_->gemvShape = shape;
-        return;
-    }
-
+    std::size_t matElements = shape.cols * shape.rows;
     id<MTLDevice> device = (__bridge id<MTLDevice>)impl_->metalContext.device_handle();
-    id<MTLBuffer> bufferMatrix = [device newBufferWithLength: element_count * sizeof(float) options: MTLResourceStorageModeShared];
-    id<MTLBuffer> bufferVector = [device newBufferWithLength: shape.cols * sizeof(float) options: MTLResourceStorageModeShared];
-    id<MTLBuffer> bufferOutput = [device newBufferWithLength: shape.rows * sizeof(float) options: MTLResourceStorageModeShared];
 
-    if (bufferMatrix == nil || bufferVector == nil || bufferOutput == nil) {
-        throw std::runtime_error("Failed to create buffers");
+    if (matElements > impl_->capacityMatrix) {
+        id<MTLBuffer> bufferMatrix = [device newBufferWithLength: matElements * sizeof(float) options: MTLResourceStorageModeShared];
+        if (bufferMatrix == nil ) {
+            throw std::runtime_error("Failed to create matrix buffer");
+        }
+        impl_->bufferMatrix = bufferMatrix;
+        impl_->capacityMatrix = matElements;
+    }
+    if (shape.cols > impl_->capacityVector) {
+        id<MTLBuffer> bufferVector = [device newBufferWithLength: shape.cols * sizeof(float) options: MTLResourceStorageModeShared];
+        if (bufferVector == nil ) {
+            throw std::runtime_error("Failed to create vector buffer");
+        }
+        impl_->bufferVector = bufferVector;
+        impl_->capacityVector = shape.cols;
     }
 
-    impl_->bufferMatrix = bufferMatrix;
-    impl_->bufferVector = bufferVector;
-    impl_->bufferOutput = bufferOutput;
+    if (shape.rows > impl_->capacityOutput) {
+        id<MTLBuffer> bufferOutput = [device newBufferWithLength: shape.rows * sizeof(float) options: MTLResourceStorageModeShared];
+        if (bufferOutput == nil) {
+            throw std::runtime_error("Failed to create buffers");
+        }
+        impl_->bufferOutput = bufferOutput;
+        impl_->capacityOutput = shape.rows;
+    }
+
     impl_->gemvShape = shape;
-    impl_->capacity_elements = element_count;
 }
 
-void GemvKernel::upload_matrix(std::span<const float> matrix) {
+void GemvNaiveKernel::upload_matrix(std::span<const float> matrix) {
+    if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (matrix.size() != impl_->gemvShape.cols * impl_->gemvShape.rows) {
         throw std::runtime_error(
             "Invalid matrix size. Expected: "
@@ -102,7 +113,8 @@ void GemvKernel::upload_matrix(std::span<const float> matrix) {
     std::memcpy([impl_->bufferMatrix contents], matrix.data(), matrix.size() * sizeof(float));
 }
 
-void GemvKernel::upload_vector(std::span<const float> vector) {
+void GemvNaiveKernel::upload_vector(std::span<const float> vector) {
+    if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (vector.size() != impl_->gemvShape.cols) {
         throw std::runtime_error(
             "Invalid vector size. Expected: "
@@ -113,8 +125,10 @@ void GemvKernel::upload_vector(std::span<const float> vector) {
     std::memcpy([impl_->bufferVector contents], vector.data(), vector.size() * sizeof(float));
 }
 
-void GemvKernel::run() {
-    if (impl_->gemvShape.cols <= 0 || impl_->gemvShape.rows <= 0) throw std::runtime_error("Invalid gemv shape");
+llmetal::MetalJob GemvNaiveKernel::submit_repeated(std::size_t repeats) {
+    if (repeats == 0) throw std::runtime_error("Invalid repeats");
+    if (in_progress()) throw std::runtime_error("Kernel is already in progress");
+    if (impl_->gemvShape.cols == 0 || impl_->gemvShape.rows == 0) throw std::runtime_error("Invalid gemv shape");
 
     id<MTLCommandQueue> commandQueue = (__bridge id<MTLCommandQueue>)impl_->metalContext.command_queue_handle();
 
@@ -133,32 +147,28 @@ void GemvKernel::run() {
     [computeEncoder setBytes:&impl_->gemvShape.cols length:sizeof(uint) atIndex:4];
 
     MTLSize gridSize = MTLSizeMake(impl_->gemvShape.rows, 1, 1);
-    
     NSUInteger upperBound = impl_->pipeline_state.maxTotalThreadsPerThreadgroup;
-    if (upperBound > gridSize.width) {
-        upperBound = gridSize.width;
-    }
+    upperBound = (upperBound > gridSize.width) ? gridSize.width : upperBound;
     MTLSize threadGroupSize = MTLSizeMake(upperBound, 1, 1);
 
-    [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+    for (std::size_t i = 0; i < repeats; ++i) {
+        [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+    }
+
     [computeEncoder endEncoding];
 
     // Execute command
     [commandBuffer commit];
-
-    // Await results
-    [commandBuffer waitUntilCompleted];
-
-    // Throw error if failed
-    if (commandBuffer.error != nil) { 
-        throw std::runtime_error(
-            std::string("Command buffer failed: ") 
-            + [commandBuffer.error.localizedDescription UTF8String]
-        );
-    }
+    impl_->lastCommandBuffer = commandBuffer;
+    return llmetal::MetalJob((__bridge void*) commandBuffer);
 }
 
-void GemvKernel::download(std::span<float> output) {
+llmetal::MetalJob GemvNaiveKernel::submit() {
+    return submit_repeated(1);
+}
+
+void GemvNaiveKernel::download(std::span<float> output) {
+    if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (output.size() < impl_->gemvShape.rows) {
         throw std::runtime_error(
             "Invalid output size. Expected: "
@@ -167,6 +177,15 @@ void GemvKernel::download(std::span<float> output) {
         );
     }
     std::memcpy(output.data(), [impl_->bufferOutput contents], impl_->gemvShape.rows * sizeof(float));
+}
+
+bool GemvNaiveKernel::in_progress() const noexcept {
+    if (impl_->lastCommandBuffer == nil) {
+        return false;
+    }
+    const auto status = impl_->lastCommandBuffer.status;
+    return status != MTLCommandBufferStatusCompleted &&
+           status != MTLCommandBufferStatusError;
 }
 
 }

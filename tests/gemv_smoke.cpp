@@ -1,5 +1,5 @@
 #include <llmetal/metal_context.hpp>
-#include <llmetal/gemv.hpp>
+#include <llmetal/gemv_naive.hpp>
 
 #include <cmath>
 #include <cstddef>
@@ -12,7 +12,7 @@
 namespace {
 
     
-bool run_case(llmetal::GemvKernel& kernel, llmetal::GemvShape shape) {
+bool run_case(llmetal::GemvNaiveKernel& kernel, llmetal::GemvShape shape) {
     std::size_t element_count = shape.cols * shape.rows;
     std::vector<float> matrix(element_count);
     std::vector<float> vector(shape.cols);
@@ -26,7 +26,8 @@ bool run_case(llmetal::GemvKernel& kernel, llmetal::GemvShape shape) {
     kernel.prepare(shape);
     kernel.upload_matrix(matrix);
     kernel.upload_vector(vector);
-    kernel.run();
+    auto job = kernel.submit();
+    job.wait();
     kernel.download(output);
 
     // Compute expected vector
@@ -79,7 +80,7 @@ bool run_case(llmetal::GemvKernel& kernel, llmetal::GemvShape shape) {
 int main() {
     try {
         llmetal::MetalContext context;
-        llmetal::GemvKernel kernel(context);
+        llmetal::GemvNaiveKernel kernel(context);
 
         // Exercises small work, a larger dispatch, and reuse after shrinking.
         return run_case(kernel, {4, 4}) 

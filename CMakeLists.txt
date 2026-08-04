@@ -92,6 +92,43 @@ add_custom_target(MetalLibs ALL
 
 add_dependencies(LLMetal MetalLibs)
 
+# === Benchmarks ===
+option(LLMETAL_BUILD_BENCHMARKS "Build LLMetal benchmarks" ON)
+
+if(LLMETAL_BUILD_BENCHMARKS)
+  add_executable(LLMetalGemvBenchmark
+    benchmarks/gemv_benchmark.mm
+    src/metal_context.mm
+    src/gemv_naive.mm
+    src/cpu/gemv.cpp
+    src/metal_job.mm
+  )
+
+  target_include_directories(LLMetalGemvBenchmark PRIVATE include)
+
+  set_target_properties(LLMetalGemvBenchmark PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalGemvBenchmark PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalGemvBenchmark PRIVATE
+    "-framework Metal"
+    "-framework Foundation"
+    "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalGemvBenchmark MetalLibs)
+endif()
+
+
 # === Tests ===
 include(CTest)
 
@@ -144,7 +181,8 @@ if(BUILD_TESTING)
     PRIVATE
       tests/gemv_smoke.cpp
       src/metal_context.mm
-      src/gemv.mm
+      src/gemv_naive.mm
+      src/metal_job.mm
   )
 
   target_include_directories(LLMetalGemvSmoke
