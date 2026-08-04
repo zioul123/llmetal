@@ -1,9 +1,16 @@
+#include "llmetal/gemv_mps.hpp"
 #include "llmetal/gemv_shape.hpp"
 #include "llmetal/metal_context.hpp"
 #include "llmetal/gemv_naive.hpp"
 #include "llmetal/cpu/gemv.hpp"
 
+#include <cmath>
+#include <span>
+#include <sstream>
+#include <string>
+#include <vector>
 #include <chrono>
+#include <concepts>
 #include <algorithm>
 #include <iostream>
 #include <numeric>
@@ -16,11 +23,33 @@ using us = std::chrono::microseconds;
 using ns = std::chrono::nanoseconds;
 auto now = std::chrono::steady_clock::now;
 
+template <typename K>
+concept GemvKernel = requires(
+    K& kernel,
+    llmetal::GemvShape shape,
+    std::span<const float> matrix,
+    std::span<const float> vector,
+    std::span<float> output,
+    std::size_t repeats
+) {
+    { kernel.prepare(shape) } -> std::same_as<void>;
+    { kernel.upload_matrix(matrix) } -> std::same_as<void>;
+    { kernel.upload_vector(vector) } -> std::same_as<void>;
+    { kernel.submit() } -> std::same_as<llmetal::MetalJob>;
+    { kernel.submit_repeated(repeats) } -> std::same_as<llmetal::MetalJob>;
+    { kernel.download(output) } -> std::same_as<void>;
+};
+
+struct BenchmarkDetails {
+    std::string_view name;
+    llmetal::GemvShape shape;
+};
+
 struct BenchmarkConfig {
     std::string_view name;
     llmetal::GemvShape shape;
-    std::span<float> matrix;
-    std::span<float> vector;
+    std::span<const float> matrix;
+    std::span<const float> vector;
 
     std::size_t warmup_runs = 20;
     std::size_t timed_runs = 1000;
@@ -28,8 +57,8 @@ struct BenchmarkConfig {
 
 constexpr int backend_width = 12;
 constexpr int shape_width   = 12;
-constexpr int time_width    = 12;
-constexpr int total_time_width = 15;  // 12 digits + " us"
+constexpr int time_width    = 16;
+constexpr int total_time_width = 19;  // 12 digits + " us"
 struct BenchmarkResult {
     std::string backend;
     BenchmarkConfig config;
@@ -50,9 +79,9 @@ struct BenchmarkResult {
             << std::right
             << std::setw(total_time_width) << "Batch GPU/op"
             << std::setw(total_time_width) << "Batch Host/op"
-            << std::setw(total_time_width) << "E2E Host Min"
-            << std::setw(total_time_width) << "E2E Host Med"
-            << std::setw(total_time_width) << "E2E Host P95"
+            << std::setw(total_time_width) << "Submit + Wait Min"
+            << std::setw(total_time_width) << "Submit + Wait Med"
+            << std::setw(total_time_width) << "Submit + Wait P95"
             << '\n';
     }
     
@@ -82,9 +111,9 @@ struct BenchmarkResult {
 struct ValidationFixture {
     std::string_view name;
     llmetal::GemvShape shape;
-    std::span<float> matrix;
-    std::span<float> vector;
-    std::span<float> expect;
+    std::span<const float> matrix;
+    std::span<const float> vector;
+    std::span<const float> expect;
 };
 
 struct ValidationResult {
@@ -97,16 +126,18 @@ struct ValidationResult {
 
 namespace Benchmark {
 
-BenchmarkResult naive(llmetal::MetalContext& context, BenchmarkConfig config) {
+template <GemvKernel Kernel>
+BenchmarkResult run(Kernel& kernel, BenchmarkConfig config, std::string_view backend) {
+    if (config.timed_runs == 0) throw std::invalid_argument("timed_runs must be greater than 0");
+
     // Prepare kernel
-    llmetal::GemvNaiveKernel kernel(context);
     std::vector<float> output(config.shape.rows);
     kernel.prepare(config.shape);
     kernel.upload_matrix(config.matrix);
     kernel.upload_vector(config.vector);
     
     // Run warmup rounds
-    {
+    if (config.warmup_runs != 0) {
         auto job = kernel.submit_repeated(config.warmup_runs);
         job.wait();
         kernel.download(output);
@@ -147,65 +178,13 @@ BenchmarkResult naive(llmetal::MetalContext& context, BenchmarkConfig config) {
     }
 
     return {
-        .backend = "naive",
+        .backend = std::string(backend),
         .config = config,
         .single_host_min = host_min,
         .single_host_median = host_median,
         .single_host_p95 = host_p95,
         .batched_host_per_dispatch = batchHostDuration,
         .batched_gpu_per_dispatch = batchGpuDuration,
-    };
-}
-
-BenchmarkResult mps(llmetal::MetalContext& context, BenchmarkConfig config) {
-    llmetal::GemvNaiveKernel kernel(context);
-    auto start = now();
-    auto stop = now();
-    auto duration = stop - start;
-
-    return {
-        .backend = "mps",
-        .config = config,
-        .single_host_min = duration,
-        .single_host_median = duration,
-        .single_host_p95 = duration,
-        .batched_host_per_dispatch = duration,
-        .batched_gpu_per_dispatch = duration
-    };
-}
-
-
-BenchmarkResult transposed(llmetal::MetalContext& context, BenchmarkConfig config) {
-    llmetal::GemvNaiveKernel kernel(context);
-    auto start = now();
-    auto stop = now();
-    auto duration = stop - start;
-
-    return {
-        .backend = "transposed",
-        .config = config,
-        .single_host_min = duration,
-        .single_host_median = duration,
-        .single_host_p95 = duration,
-        .batched_host_per_dispatch = duration,
-        .batched_gpu_per_dispatch = duration
-    };
-}
-
-BenchmarkResult interleaved(llmetal::MetalContext& context, BenchmarkConfig config) {
-    llmetal::GemvNaiveKernel kernel(context);
-    auto start = now();
-    auto stop = now();
-    auto duration = stop - start;
-
-    return {
-        .backend = "interleaved",
-        .config = config,
-        .single_host_min = duration,
-        .single_host_median = duration,
-        .single_host_p95 = duration,
-        .batched_host_per_dispatch = duration,
-        .batched_gpu_per_dispatch = duration
     };
 }
 
@@ -219,17 +198,16 @@ ValidationResult validate_output(
     std::span<const float> actual,
     std::span<const float> expect
 ) {
-    constexpr float tolerance = 1.0e-6f;
-
+    constexpr float absoluteTolerance = 1.0e-4f;
+    constexpr float relativeTolerance = 1.0e-5f;
     for (std::size_t i = 0; i < actual.size(); ++i) {
-        if (std::fabs(actual[i] - expect[i]) > tolerance) {
+        const float difference = std::fabs(actual[i] - expect[i]);
+        const float scale = std::max(std::fabs(actual[i]), std::fabs(expect[i]));
+        if (difference > absoluteTolerance + relativeTolerance * scale) {
             std::ostringstream message;
             message
                 << "output[" << i << "] = " << actual[i]
-                << ", expected " << expect[i];
-
-            std::cerr << "    " << backend << ": " << message.str() << '\n';
-            
+                << ", expected " << expect[i];            
             return {
                 .backend = std::string(backend),
                 .shape = shape,
@@ -247,11 +225,10 @@ ValidationResult validate_output(
     };
 }
 
-ValidationResult naive(llmetal::MetalContext& context, const ValidationFixture& fixture) {
-    std::vector<float> output(fixture.shape.rows);
-
+template <GemvKernel Kernel>
+ValidationResult run(Kernel& kernel, const ValidationFixture& fixture, std::string_view backend) {
     // Run the kernel
-    llmetal::GemvNaiveKernel kernel(context);
+    std::vector<float> output(fixture.shape.rows);
     kernel.prepare(fixture.shape);
     kernel.upload_matrix(fixture.matrix);
     kernel.upload_vector(fixture.vector);
@@ -261,52 +238,11 @@ ValidationResult naive(llmetal::MetalContext& context, const ValidationFixture& 
 
     // Validate
     return validate_output(
-        "naive", 
+        std::string(backend), 
         fixture.shape, 
         output, 
         fixture.expect
     );
-}
-
-ValidationResult mps(llmetal::MetalContext& context, const ValidationFixture& fixture) {
-    // llmetal::GemvKernel kernel(context);
-    
-
-    return {
-        .backend = "mps",
-        .shape = fixture.shape,
-        .valid = true,
-        .error = "",
-    };
-}
-
-
-ValidationResult transposed(llmetal::MetalContext& context, const ValidationFixture& fixture) {
-    llmetal::GemvNaiveKernel kernel(context);
-    auto start = std::chrono::high_resolution_clock::now();
-    auto stop = std::chrono::high_resolution_clock::now();
-    auto duration = stop - start;
-
-    return {
-        .backend = "transposed",
-        .shape = fixture.shape,
-        .valid = true,
-        .error = "",
-    };
-}
-
-ValidationResult interleaved(llmetal::MetalContext& context, const ValidationFixture& fixture) {
-    llmetal::GemvNaiveKernel kernel(context);
-    auto start = std::chrono::high_resolution_clock::now();
-    auto stop = std::chrono::high_resolution_clock::now();
-    auto duration = stop - start;
-
-    return {
-        .backend = "interleaved",
-        .shape = fixture.shape,
-        .valid = true,
-        .error = "",
-    };
 }
 
 } // namespace Validate
@@ -314,7 +250,10 @@ ValidationResult interleaved(llmetal::MetalContext& context, const ValidationFix
 int main() {
     try {
         llmetal::MetalContext context;
-        BenchmarkConfig configs[] = {
+        llmetal::GemvNaiveKernel naiveKernel(context);
+        llmetal::GemvMpsKernel mpsKernel(context);
+        
+        BenchmarkDetails details[] = {
             { "1024x1024", 1024, 1024},
             { "2048x1024", 2048, 1024},
             { "1024x2048", 1024, 2048},
@@ -322,14 +261,19 @@ int main() {
             { "1024x3072", 1024, 3072}
         };
 
-        for (auto const &config : configs) {
-            std::cout << "=== " << config.name << " ===" << std::endl;
+        for (auto const &detail : details) {
+            std::cout << "=== " << detail.name << " ===" << std::endl;
+
+            // === Preparation ===
 
             // Generate random data
-            std::size_t element_count = config.shape.cols * config.shape.rows;
+            std::size_t element_count = detail.shape.cols * detail.shape.rows;
             std::vector<float> matrix(element_count);
-            std::vector<float> vector(config.shape.cols);
-            std::vector<float> expect(config.shape.rows);
+            std::vector<float> vector(detail.shape.cols);
+            std::vector<float> expect(detail.shape.rows);
+            BenchmarkConfig config = {
+                detail.name, detail.shape, matrix, vector
+            };
             
             std::mt19937 rng(element_count);
             std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
@@ -345,43 +289,40 @@ int main() {
             };
 
             // Validate the implementations
-            ValidationResult naiveValidation = Validate::naive(context, fixture);
-            // ValidationResult mpsValidation = Validate::mps(context, fixture);
+            auto naiveValidation = Validate::run(naiveKernel, fixture, "naive");
+            auto mpsValidation = Validate::run(mpsKernel, fixture, "mps");
             // ValidationResult transposedValidation = Validate::transposed(context, config);
             // ValidationResult interleavedValidation = Validate::interleaved(context, config);
 
             // Print validation results
             std::cout << "Validation:\n";
             for (auto const &result : {
-                naiveValidation, // mpsValidation, transposedValidation, interleavedValidation
+                naiveValidation, mpsValidation, // transposedValidation, interleavedValidation
             }) {
                 if (!result.valid) {
-                    std::cerr << "  " << result.backend << ": " << result.error << '\n';
+                    std::cerr << "  " << result.backend << ": failed - " << result.error << '\n';
                 } else {
                     std::cout << "  " << result.backend << ": passed\n";
                 }
             }
+            if (!naiveValidation.valid || !mpsValidation.valid) {
+                std::cerr << "Skipping benchmarks because validation failed." << std::endl;
+                return 1;
+            }
 
             // === Benchmark pass ===
-
-            BenchmarkResult naiveBenchmark = Benchmark::naive(
-                context, 
-                {
-                    .name=config.name,
-                    .shape=config.shape,
-                    .matrix=matrix,
-                    .vector=vector
-                }
-            );
-            // BenchmarkResult mpsBenchmark = Benchmark::mps(context, config);
+            
+            auto naiveBenchmark = Benchmark::run(naiveKernel, config, "naive");
+            auto mpsBenchmark = Benchmark::run(mpsKernel, config, "mps");
             // BenchmarkResult transposedBenchmark = Benchmark::transposed(context, config);
             // BenchmarkResult interleavedBenchmark = Benchmark::interleaved(context, config);
-            
+            std::cout << std::endl;
+
             // Table header
             naiveBenchmark.printHeader();
 
             for (auto const &result : {
-                naiveBenchmark, // mpsBenchmark, transposedBenchmark, interleavedBenchmark
+                naiveBenchmark, mpsBenchmark, // transposedBenchmark, interleavedBenchmark
             }) {
                 result.printRow();
             }

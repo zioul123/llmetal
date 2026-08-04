@@ -7,6 +7,8 @@
 
 namespace llmetal::cpu {
 
+// TODO: Fix clangd type hint for directories nested within include/llmetal
+
 void gemv_f32(
     GemvShape shape,
     std::span<const float> matrix,

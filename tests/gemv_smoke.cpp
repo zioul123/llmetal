@@ -1,3 +1,5 @@
+#include "llmetal/gemv_mps.hpp"
+#include "llmetal/gemv_shape.hpp"
 #include <llmetal/metal_context.hpp>
 #include <llmetal/gemv_naive.hpp>
 
@@ -11,8 +13,8 @@
 
 namespace {
 
-    
-bool run_case(llmetal::GemvNaiveKernel& kernel, llmetal::GemvShape shape) {
+template <typename Kernel>
+bool run_case(Kernel& kernel, llmetal::GemvShape shape) {
     std::size_t element_count = shape.cols * shape.rows;
     std::vector<float> matrix(element_count);
     std::vector<float> vector(shape.cols);
@@ -80,14 +82,20 @@ bool run_case(llmetal::GemvNaiveKernel& kernel, llmetal::GemvShape shape) {
 int main() {
     try {
         llmetal::MetalContext context;
-        llmetal::GemvNaiveKernel kernel(context);
+        llmetal::GemvNaiveKernel naive(context);
+        llmetal::GemvMpsKernel mps(context);
 
         // Exercises small work, a larger dispatch, and reuse after shrinking.
-        return run_case(kernel, {4, 4}) 
-            && run_case(kernel, {16, 64}) 
-            && run_case(kernel, {64, 32})
-            ? 0
-            : 1;
+        for (const auto shape: {
+            llmetal::GemvShape{4, 4},
+            llmetal::GemvShape{16, 64},
+            llmetal::GemvShape{32, 32}, // Same capacity, different dimensions
+            llmetal::GemvShape{64, 32},
+
+        }) {
+            if (!run_case(naive, shape) || !run_case(mps, shape)) return 1;
+        }
+        return 0;
     } catch (const std::exception& error) {
         std::cerr << "Vector-add smoke test failed: " << error.what() << '\n';
         return 1;

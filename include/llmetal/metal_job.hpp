@@ -1,4 +1,7 @@
+#pragma once
+
 #include <chrono>
+#include <memory>
 
 namespace llmetal {
  
@@ -20,6 +23,7 @@ private:
     std::unique_ptr<Impl> impl_;
 
     friend class GemvNaiveKernel;
+    friend class GemvMpsKernel;
 };
 
 } // namespace llmetal

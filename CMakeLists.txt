@@ -42,6 +42,7 @@ target_link_libraries(LLMetal
   PRIVATE
     "-framework Metal"
     "-framework Foundation"
+    "-framework MetalPerformanceShaders"
 )
 
 # Explicit version that will throw error instead
@@ -100,6 +101,7 @@ if(LLMETAL_BUILD_BENCHMARKS)
     benchmarks/gemv_benchmark.mm
     src/metal_context.mm
     src/gemv_naive.mm
+    src/gemv_mps.mm
     src/cpu/gemv.cpp
     src/metal_job.mm
   )
@@ -119,10 +121,11 @@ if(LLMETAL_BUILD_BENCHMARKS)
     "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
   )
 
-  target_link_libraries(LLMetalGemvBenchmark PRIVATE
-    "-framework Metal"
-    "-framework Foundation"
-    "-framework MetalPerformanceShaders"
+  target_link_libraries(LLMetalGemvBenchmark
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
   )
 
   add_dependencies(LLMetalGemvBenchmark MetalLibs)
@@ -167,6 +170,7 @@ if(BUILD_TESTING)
     PRIVATE
       "-framework Metal"
       "-framework Foundation"
+      "-framework MetalPerformanceShaders"
   )
 
   add_dependencies(LLMetalVectorAddSmoke MetalLibs)
@@ -182,6 +186,7 @@ if(BUILD_TESTING)
       tests/gemv_smoke.cpp
       src/metal_context.mm
       src/gemv_naive.mm
+      src/gemv_mps.mm
       src/metal_job.mm
   )
 
@@ -208,6 +213,7 @@ if(BUILD_TESTING)
     PRIVATE
       "-framework Metal"
       "-framework Foundation"
+      "-framework MetalPerformanceShaders"
   )
 
   add_dependencies(LLMetalGemvSmoke MetalLibs)
