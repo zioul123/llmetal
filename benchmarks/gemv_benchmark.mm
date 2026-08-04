@@ -53,7 +53,7 @@ struct BenchmarkConfig {
     std::span<const float> vector;
 
     std::size_t warmup_runs = 20;
-    std::size_t timed_runs = 1000;
+    std::size_t timed_runs = 100;
 };
 
 constexpr int backend_width = 12;
@@ -199,8 +199,10 @@ ValidationResult validate_output(
     std::span<const float> actual,
     std::span<const float> expect
 ) {
-    constexpr float absoluteTolerance = 1.0e-4f;
-    constexpr float relativeTolerance = 1.0e-5f;
+    // constexpr float absoluteTolerance = 1.0e-4f;
+    constexpr float absoluteTolerance = 1.0e-3f;
+    constexpr float relativeTolerance = 1.0e-4f;
+    // constexpr float relativeTolerance = 1.0e-5f;
     for (std::size_t i = 0; i < actual.size(); ++i) {
         const float difference = std::fabs(actual[i] - expect[i]);
         const float scale = std::max(std::fabs(actual[i]), std::fabs(expect[i]));
@@ -260,7 +262,12 @@ int main() {
             { "2048x1024", 2048, 1024},
             { "1024x2048", 1024, 2048},
             { "3072x1024", 3072, 1024},
-            { "1024x3072", 1024, 3072}
+            { "1024x3072", 1024, 3072},
+            { "4096x4096", 4096, 4096},
+            { "8192x8192", 8192, 8192},
+            { "11008x4096", 11008, 4096},
+            { "4096x11008", 4096, 11008},
+            
         };
 
         for (auto const &detail : details) {

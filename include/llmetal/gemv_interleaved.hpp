@@ -21,7 +21,7 @@ public:
     GemvInterleavedKernel& operator=(GemvInterleavedKernel&&) noexcept;
 
     void prepare(GemvShape);
-    void upload_matrix(std::span<const float> matrix, bool isAlreadyInterleaved = false);
+    void upload_matrix(std::span<const float> matrix);
     void upload_vector(std::span<const float> vector);
     llmetal::MetalJob submit();
     // Used for benchmarking
@@ -37,12 +37,5 @@ private:
     class Impl;
     std::unique_ptr<Impl> impl_;
 };
-
-std::vector<float> interleave(
-    std::span<const float> matrix,
-    std::size_t row_groups,
-    std::size_t threads_per_row_group,
-    GemvShape shape
-);
 
 } // namespace llmetal

@@ -68,29 +68,6 @@ GemvInterleavedKernel::~GemvInterleavedKernel() = default;
 GemvInterleavedKernel::GemvInterleavedKernel(GemvInterleavedKernel&&) noexcept = default;
 GemvInterleavedKernel& GemvInterleavedKernel::operator=(GemvInterleavedKernel&&) noexcept = default;
 
-std::vector<float> interleave(
-    std::span<const float> matrix,
-    std::size_t row_groups,
-    std::size_t threads_per_row_group,
-    GemvShape shape
-) {
-    // We will interleave this matrix. High startup cost, but we'd store it in this format in future.
-    std::vector<float> interleaved_matrix(matrix.size());
-    std::size_t toIndex = 0;
-    for (std::size_t g = 0; g < row_groups; ++g) {
-        for (std::size_t c = 0; c < shape.cols; ++c) {
-            for (std::size_t t = 0; t < threads_per_row_group; ++t) {
-                std::size_t row = g * threads_per_row_group + t;
-                std::size_t fromIndex = row * shape.cols + c;
-                if (row < shape.rows) {
-                    interleaved_matrix[toIndex++] = matrix[fromIndex];
-                }
-            }
-        }
-    }
-    return interleaved_matrix;
-}
-
 void GemvInterleavedKernel::prepare(GemvShape shape) {
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (shape.cols == 0 || shape.rows == 0) throw std::runtime_error("Invalid gemv shape");
@@ -127,10 +104,7 @@ void GemvInterleavedKernel::prepare(GemvShape shape) {
     impl_->gemvShape = shape;
 }
 
-void GemvInterleavedKernel::upload_matrix(
-    std::span<const float> matrix,
-    bool isAlreadyInterleaved
-) {
+void GemvInterleavedKernel::upload_matrix(std::span<const float> matrix) {
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (matrix.size() != impl_->gemvShape.cols * impl_->gemvShape.rows) {
         throw std::runtime_error(
@@ -140,19 +114,7 @@ void GemvInterleavedKernel::upload_matrix(
         );
     }
 
-    if (isAlreadyInterleaved) {
-        std::memcpy([impl_->bufferMatrix contents], matrix.data(), matrix.size() * sizeof(float));
-        return;
-    }
-
-    NSUInteger threads_per_group = [impl_->pipeline_state threadExecutionWidth];
-    NSUInteger groups_in_grid = (impl_->gemvShape.rows + threads_per_group - 1) / threads_per_group;
-
-    // We will interleave this matrix. High startup cost, but we'd store it in this format in future.
-    std::vector<float> interleaved_matrix = interleave(
-        matrix, groups_in_grid, threads_per_group, impl_->gemvShape
-    );
-    std::memcpy([impl_->bufferMatrix contents], interleaved_matrix.data(), matrix.size() * sizeof(float));
+    std::memcpy([impl_->bufferMatrix contents], matrix.data(), matrix.size() * sizeof(float));
 }
 
 void GemvInterleavedKernel::upload_vector(std::span<const float> vector) {
@@ -188,14 +150,12 @@ llmetal::MetalJob GemvInterleavedKernel::submit_repeated(std::size_t repeats) {
     [computeEncoder setBytes:&impl_->gemvShape.rows length:sizeof(uint) atIndex:3];
     [computeEncoder setBytes:&impl_->gemvShape.cols length:sizeof(uint) atIndex:4];
 
-    MTLSize gridSize = MTLSizeMake(impl_->gemvShape.rows, 1, 1);
-    NSUInteger upperBound = impl_->pipeline_state.maxTotalThreadsPerThreadgroup;
-    // NSUInteger upperBound = [impl_->pipeline_state threadExecutionWidth];
-    upperBound = (upperBound > gridSize.width) ? gridSize.width : upperBound;
-    MTLSize threadGroupSize = MTLSizeMake(upperBound, 1, 1);
+    MTLSize threadGroups = MTLSizeMake(impl_->gemvShape.rows, 1, 1);
+    MTLSize threadGroupSize = MTLSizeMake([impl_->pipeline_state threadExecutionWidth], 1, 1);
 
     for (std::size_t i = 0; i < repeats; ++i) {
-        [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+        [computeEncoder dispatchThreadgroups:threadGroups 
+                       threadsPerThreadgroup:threadGroupSize];
     }
 
     [computeEncoder endEncoding];

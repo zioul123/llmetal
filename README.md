@@ -33,5 +33,4 @@ Or manually run individual tests:
 ```bash
 ./build/debug/LLMetalVectorAddSmoke
 ./build/debug/LLMetalGemvSmoke
-./build/debug/LLMetalGemvInterleaveSmoke
 ```
