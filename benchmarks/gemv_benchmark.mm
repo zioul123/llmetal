@@ -2,7 +2,6 @@
 #include "llmetal/gemv_shape.hpp"
 #include "llmetal/metal_context.hpp"
 #include "llmetal/gemv_naive.hpp"
-#include "llmetal/gemv_1RPSG.hpp"
 #include "llmetal/gemv_NRPSG.hpp"
 #include "llmetal/cpu/gemv.hpp"
 
@@ -256,8 +255,7 @@ int main() {
         llmetal::MetalContext context;
         llmetal::GemvNaiveKernel naiveKernel(context);
         llmetal::GemvMpsKernel mpsKernel(context);
-        llmetal::Gemv1RPSGKernel oneRPSGKernel1(context);
-        llmetal::GemvNRPSGKernel oneRPSGKernel2(context, 1, 1);
+        llmetal::GemvNRPSGKernel oneRPSGKernel(context, 1, 1);
         llmetal::GemvNRPSGKernel twoRPSGKernel(context, 2, 1);
         llmetal::GemvNRPSGKernel fourRPSGKernel(context, 4, 1);
         llmetal::GemvNRPSGKernel eightRPSGKernel(context, 8, 1);
@@ -315,8 +313,7 @@ int main() {
             ValidationResult validationResults[] = {
                 Validate::run(naiveKernel,     fixture, "naive"),
 
-                Validate::run(oneRPSGKernel1,  fixture, "1rpsg1"),
-                Validate::run(oneRPSGKernel2,  fixture, "1rpsg2"),
+                Validate::run(oneRPSGKernel,  fixture, "1rpsg"),
                 Validate::run(twoRPSGKernel,   fixture, "2rpsg"),
                 Validate::run(fourRPSGKernel,  fixture, "4rpsg"),
                 Validate::run(eightRPSGKernel, fixture, "8rpsg"),
@@ -363,8 +360,7 @@ int main() {
             BenchmarkResult benchmarkResults[] = {
                 Benchmark::run(naiveKernel,     config_with_data, "naive"),
 
-                Benchmark::run(oneRPSGKernel1,  config_with_data, "1rpsg1"),
-                Benchmark::run(oneRPSGKernel2,  config_with_data, "1rpsg2"),
+                Benchmark::run(oneRPSGKernel,  config_with_data, "1rpsg"),
                 Benchmark::run(twoRPSGKernel,   config_with_data, "2rpsg"),
                 Benchmark::run(fourRPSGKernel,  config_with_data, "4rpsg"),
                 Benchmark::run(eightRPSGKernel, config_with_data, "8rpsg"),
@@ -375,7 +371,7 @@ int main() {
                 Benchmark::run(eightRPSG_2SGPTG_Kernel, config_with_data, "8rpsg_2sgptg"),
 
                 Benchmark::run(mpsKernel,       config_with_data, "mps"),
-                
+
                 Benchmark::run(oneRPSG_4SGPTG_Kernel, config_with_data, "1rpsg_4sgptg"),
                 Benchmark::run(twoRPSG_4SGPTG_Kernel, config_with_data, "2rpsg_4sgptg"),
                 Benchmark::run(fourRPSG_4SGPTG_Kernel, config_with_data, "4rpsg_4sgptg"),

@@ -7,17 +7,6 @@
 #include <vector>
 #include <random>
 
-void add_arrays(
-    const float* inA,
-    const float* inB,
-    float* result, 
-    int length
-) {
-    for (int index = 0; index < length ; index++) {
-        result[index] = inA[index] + inB[index];
-    }
-}
-
 int main() {
     std::cout << "LLMetal" << std::endl;
     std::cout << "Build: " << LLMETAL_BUILD_TYPE << "\n";
