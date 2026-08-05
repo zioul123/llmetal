@@ -57,7 +57,7 @@ struct BenchmarkConfigWithData {
     std::size_t timed_runs = 100;
 };
 
-constexpr int backend_width = 12;
+constexpr int backend_width = 14;
 constexpr int shape_width   = 12;
 constexpr int time_width    = 16;
 constexpr int total_time_width = 19;  // 12 digits + " us"
@@ -257,17 +257,29 @@ int main() {
         llmetal::GemvNaiveKernel naiveKernel(context);
         llmetal::GemvMpsKernel mpsKernel(context);
         llmetal::Gemv1RPSGKernel oneRPSGKernel1(context);
-        llmetal::GemvNRPSGKernel oneRPSGKernel2(context, 1);
-        llmetal::GemvNRPSGKernel twoRPSGKernel(context, 2);
-        llmetal::GemvNRPSGKernel fourRPSGKernel(context, 4);
-        llmetal::GemvNRPSGKernel eightRPSGKernel(context, 8);
+        llmetal::GemvNRPSGKernel oneRPSGKernel2(context, 1, 1);
+        llmetal::GemvNRPSGKernel twoRPSGKernel(context, 2, 1);
+        llmetal::GemvNRPSGKernel fourRPSGKernel(context, 4, 1);
+        llmetal::GemvNRPSGKernel eightRPSGKernel(context, 8, 1);
+        llmetal::GemvNRPSGKernel oneRPSG_2SGPTG_Kernel(context, 1, 2);
+        llmetal::GemvNRPSGKernel twoRPSG_2SGPTG_Kernel(context, 2, 2);
+        llmetal::GemvNRPSGKernel fourRPSG_2SGPTG_Kernel(context, 4, 2);
+        llmetal::GemvNRPSGKernel eightRPSG_2SGPTG_Kernel(context, 8, 2);
+        llmetal::GemvNRPSGKernel oneRPSG_4SGPTG_Kernel(context, 1, 4);
+        llmetal::GemvNRPSGKernel twoRPSG_4SGPTG_Kernel(context, 2, 4);
+        llmetal::GemvNRPSGKernel fourRPSG_4SGPTG_Kernel(context, 4, 4);
+        llmetal::GemvNRPSGKernel eightRPSG_4SGPTG_Kernel(context, 8, 4);
+        llmetal::GemvNRPSGKernel oneRPSG_8SGPTG_Kernel(context, 1, 8);
+        llmetal::GemvNRPSGKernel twoRPSG_8SGPTG_Kernel(context, 2, 8);
+        llmetal::GemvNRPSGKernel fourRPSG_8SGPTG_Kernel(context, 4, 8);
+        llmetal::GemvNRPSGKernel eightRPSG_8SGPTG_Kernel(context, 8, 8);
         
         BenchmarkConfig details[] = {
-            { "1024x1024", 1024, 1024},
-            { "2048x1024", 2048, 1024},
-            { "1024x2048", 1024, 2048},
-            { "3072x1024", 3072, 1024},
-            { "1024x3072", 1024, 3072},
+            // { "1024x1024", 1024, 1024},
+            // { "2048x1024", 2048, 1024},
+            // { "1024x2048", 1024, 2048},
+            // { "3072x1024", 3072, 1024},
+            // { "1024x3072", 1024, 3072},
             { "4096x4096", 4096, 4096},
             { "8192x8192", 8192, 8192},
             { "11008x4096", 11008, 4096},
@@ -302,12 +314,29 @@ int main() {
             // Validate the implementations
             ValidationResult validationResults[] = {
                 Validate::run(naiveKernel,     fixture, "naive"),
-                Validate::run(mpsKernel,       fixture, "mps"),
+
                 Validate::run(oneRPSGKernel1,  fixture, "1rpsg1"),
                 Validate::run(oneRPSGKernel2,  fixture, "1rpsg2"),
                 Validate::run(twoRPSGKernel,   fixture, "2rpsg"),
                 Validate::run(fourRPSGKernel,  fixture, "4rpsg"),
                 Validate::run(eightRPSGKernel, fixture, "8rpsg"),
+
+                Validate::run(oneRPSG_2SGPTG_Kernel,  fixture, "1rpsg_2sgptg"),
+                Validate::run(twoRPSG_2SGPTG_Kernel,   fixture, "2rpsg_2sgptg"),
+                Validate::run(fourRPSG_2SGPTG_Kernel,  fixture, "4rpsg_2sgptg"),
+                Validate::run(eightRPSG_2SGPTG_Kernel, fixture, "8rpsg_2sgptg"),
+
+                Validate::run(mpsKernel,       fixture, "mps"),
+
+                Validate::run(oneRPSG_4SGPTG_Kernel,  fixture, "1rpsg_4sgptg"),
+                Validate::run(twoRPSG_4SGPTG_Kernel,   fixture, "2rpsg_4sgptg"),
+                Validate::run(fourRPSG_4SGPTG_Kernel,  fixture, "4rpsg_4sgptg"),
+                Validate::run(eightRPSG_4SGPTG_Kernel, fixture, "8rpsg_4sgptg"),
+
+                Validate::run(oneRPSG_8SGPTG_Kernel,  fixture, "1rpsg_8sgptg"),
+                Validate::run(twoRPSG_8SGPTG_Kernel,   fixture, "2rpsg_8sgptg"),
+                Validate::run(fourRPSG_8SGPTG_Kernel,  fixture, "4rpsg_8sgptg"),
+                Validate::run(eightRPSG_8SGPTG_Kernel, fixture, "8rpsg_8sgptg"),
             };
             
             // Print validation results
@@ -317,25 +346,45 @@ int main() {
                 if (!result.valid) {
                     std::cerr << "  " << result.backend << ": failed - " << result.error << '\n';
                     any_failed = true;
-                } else {
-                    std::cout << "  " << result.backend << ": passed\n";
                 }
+                // else {
+                //     std::cout << "  " << result.backend << ": passed\n";
+                // }
             }
             std::cout << std::endl;
             if (any_failed) {
                 std::cerr << "Skipping benchmarks because validation failed." << std::endl;
                 return 1;
+            } else {
+                std::cout << "  Validation passed." << std::endl;
             }
 
             // === Benchmark pass ===
             BenchmarkResult benchmarkResults[] = {
                 Benchmark::run(naiveKernel,     config_with_data, "naive"),
-                Benchmark::run(mpsKernel,       config_with_data, "mps"),
+
                 Benchmark::run(oneRPSGKernel1,  config_with_data, "1rpsg1"),
                 Benchmark::run(oneRPSGKernel2,  config_with_data, "1rpsg2"),
                 Benchmark::run(twoRPSGKernel,   config_with_data, "2rpsg"),
                 Benchmark::run(fourRPSGKernel,  config_with_data, "4rpsg"),
                 Benchmark::run(eightRPSGKernel, config_with_data, "8rpsg"),
+
+                Benchmark::run(oneRPSG_2SGPTG_Kernel, config_with_data, "1rpsg_2sgptg"),
+                Benchmark::run(twoRPSG_2SGPTG_Kernel, config_with_data, "2rpsg_2sgptg"),
+                Benchmark::run(fourRPSG_2SGPTG_Kernel, config_with_data, "4rpsg_2sgptg"),
+                Benchmark::run(eightRPSG_2SGPTG_Kernel, config_with_data, "8rpsg_2sgptg"),
+
+                Benchmark::run(mpsKernel,       config_with_data, "mps"),
+                
+                Benchmark::run(oneRPSG_4SGPTG_Kernel, config_with_data, "1rpsg_4sgptg"),
+                Benchmark::run(twoRPSG_4SGPTG_Kernel, config_with_data, "2rpsg_4sgptg"),
+                Benchmark::run(fourRPSG_4SGPTG_Kernel, config_with_data, "4rpsg_4sgptg"),
+                Benchmark::run(eightRPSG_4SGPTG_Kernel, config_with_data, "8rpsg_4sgptg"),
+
+                Benchmark::run(oneRPSG_8SGPTG_Kernel, config_with_data, "1rpsg_8sgptg"),
+                Benchmark::run(twoRPSG_8SGPTG_Kernel, config_with_data, "2rpsg_8sgptg"),
+                Benchmark::run(fourRPSG_8SGPTG_Kernel, config_with_data, "4rpsg_8sgptg"),
+                Benchmark::run(eightRPSG_8SGPTG_Kernel, config_with_data, "8rpsg_8sgptg"),
             };
             // Table header
             benchmarkResults[0].printHeader();

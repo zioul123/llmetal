@@ -28,14 +28,17 @@ kernel void gemv_1RPSG(
     constant uint& rows          [[buffer(3)]], // output elements
     constant uint& cols          [[buffer(4)]], // input elements
     uint lane                    [[thread_index_in_simdgroup]],
-    uint simd_width              [[threads_per_simdgroup]],
-    uint2 tg                     [[threadgroup_position_in_grid]]
+    uint sg                      [[simdgroup_index_in_threadgroup]],
+    uint sg_size                 [[threads_per_simdgroup]],
+    uint2 tg                     [[threadgroup_position_in_grid]],
+    uint2 tg_size                [[threads_per_threadgroup]]
 ) {
-    uint row = tg.x;
+    uint sgptg = tg_size.x / sg_size;
+    uint row = tg.x * sgptg + sg;
     if (row >= rows) return;
 
     float result = 0.0f;
-    for (uint col = lane; col < cols; col += simd_width) {
+    for (uint col = lane; col < cols; col += sg_size) {
         result = fma(inMatrix[row * cols + col], inVector[col], result);
     }
     
@@ -52,10 +55,13 @@ kernel void gemv_2RPSG(
     constant uint& rows          [[buffer(3)]], // output elements
     constant uint& cols          [[buffer(4)]], // input elements
     uint lane                    [[thread_index_in_simdgroup]],
-    uint simd_width              [[threads_per_simdgroup]],
-    uint2 tg                     [[threadgroup_position_in_grid]]
+    uint sg                      [[simdgroup_index_in_threadgroup]],
+    uint sg_size                 [[threads_per_simdgroup]],
+    uint2 tg                     [[threadgroup_position_in_grid]],
+    uint2 tg_size                [[threads_per_threadgroup]]
 ) {
-    uint row = tg.x * 2;
+    uint sgptg = tg_size.x / sg_size;
+    uint row = tg.x * 2 * sgptg + sg * 2;
     if (row >= rows) return;
 
     float result0 = 0.0f;
@@ -63,9 +69,10 @@ kernel void gemv_2RPSG(
 
     // Get more juice out of each column read
     // Increase instruction parallelism
-    for (uint col = lane; col < cols; col += simd_width) {
-        result0 = fma(inMatrix[ row      * cols + col], inVector[col], result0);
-        result1 = fma(inMatrix[(row + 1) * cols + col], inVector[col], result1);
+    for (uint col = lane; col < cols; col += sg_size) {
+        float vecValue = inVector[col];
+        result0 = fma(inMatrix[ row      * cols + col], vecValue, result0);
+        result1 = fma(inMatrix[(row + 1) * cols + col], vecValue, result1);
     }
     
     result0 = simd_sum(result0);
@@ -84,10 +91,13 @@ kernel void gemv_4RPSG(
     constant uint& rows          [[buffer(3)]], // output elements
     constant uint& cols          [[buffer(4)]], // input elements
     uint lane                    [[thread_index_in_simdgroup]],
-    uint simd_width              [[threads_per_simdgroup]],
-    uint2 tg                     [[threadgroup_position_in_grid]]
+    uint sg                      [[simdgroup_index_in_threadgroup]],
+    uint sg_size                 [[threads_per_simdgroup]],
+    uint2 tg                     [[threadgroup_position_in_grid]],
+    uint2 tg_size                [[threads_per_threadgroup]]
 ) {
-    uint row = tg.x * 4;
+    uint sgptg = tg_size.x / sg_size;
+    uint row = tg.x * 4 * sgptg + sg * 4;
     if (row >= rows) return;
 
     float result0 = 0.0f;
@@ -97,11 +107,12 @@ kernel void gemv_4RPSG(
 
     // Get more juice out of each column read
     // Increase instruction parallelism
-    for (uint col = lane; col < cols; col += simd_width) {
-        result0 = fma(inMatrix[ row      * cols + col], inVector[col], result0);
-        result1 = fma(inMatrix[(row + 1) * cols + col], inVector[col], result1);
-        result2 = fma(inMatrix[(row + 2) * cols + col], inVector[col], result2);
-        result3 = fma(inMatrix[(row + 3) * cols + col], inVector[col], result3);
+    for (uint col = lane; col < cols; col += sg_size) {
+        float vecValue = inVector[col];
+        result0 = fma(inMatrix[ row      * cols + col], vecValue, result0);
+        result1 = fma(inMatrix[(row + 1) * cols + col], vecValue, result1);
+        result2 = fma(inMatrix[(row + 2) * cols + col], vecValue, result2);
+        result3 = fma(inMatrix[(row + 3) * cols + col], vecValue, result3);
     }
     
     result0 = simd_sum(result0);
@@ -124,10 +135,13 @@ kernel void gemv_8RPSG(
     constant uint& rows          [[buffer(3)]], // output elements
     constant uint& cols          [[buffer(4)]], // input elements
     uint lane                    [[thread_index_in_simdgroup]],
-    uint simd_width              [[threads_per_simdgroup]],
-    uint2 tg                     [[threadgroup_position_in_grid]]
+    uint sg                      [[simdgroup_index_in_threadgroup]],
+    uint sg_size                 [[threads_per_simdgroup]],
+    uint2 tg                     [[threadgroup_position_in_grid]],
+    uint2 tg_size                [[threads_per_threadgroup]]
 ) {
-    uint row = tg.x * 8;
+    uint sgptg = tg_size.x / sg_size;
+    uint row = tg.x * 8 * sgptg + sg * 8;
     if (row >= rows) return;
 
     float result0 = 0.0f;
@@ -141,15 +155,16 @@ kernel void gemv_8RPSG(
 
     // Get more juice out of each column read
     // Increase instruction parallelism
-    for (uint col = lane; col < cols; col += simd_width) {
-        result0 = fma(inMatrix[ row      * cols + col], inVector[col], result0);
-        result1 = fma(inMatrix[(row + 1) * cols + col], inVector[col], result1);
-        result2 = fma(inMatrix[(row + 2) * cols + col], inVector[col], result2);
-        result3 = fma(inMatrix[(row + 3) * cols + col], inVector[col], result3);
-        result4 = fma(inMatrix[(row + 4) * cols + col], inVector[col], result4);
-        result5 = fma(inMatrix[(row + 5) * cols + col], inVector[col], result5);
-        result6 = fma(inMatrix[(row + 6) * cols + col], inVector[col], result6);
-        result7 = fma(inMatrix[(row + 7) * cols + col], inVector[col], result7);
+    for (uint col = lane; col < cols; col += sg_size) {
+        float vecValue = inVector[col];
+        result0 = fma(inMatrix[ row      * cols + col], vecValue, result0);
+        result1 = fma(inMatrix[(row + 1) * cols + col], vecValue, result1);
+        result2 = fma(inMatrix[(row + 2) * cols + col], vecValue, result2);
+        result3 = fma(inMatrix[(row + 3) * cols + col], vecValue, result3);
+        result4 = fma(inMatrix[(row + 4) * cols + col], vecValue, result4);
+        result5 = fma(inMatrix[(row + 5) * cols + col], vecValue, result5);
+        result6 = fma(inMatrix[(row + 6) * cols + col], vecValue, result6);
+        result7 = fma(inMatrix[(row + 7) * cols + col], vecValue, result7);
     }
     
     result0 = simd_sum(result0);

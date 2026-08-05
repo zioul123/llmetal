@@ -14,7 +14,7 @@ class MetalContext;
 // N rows per SIMD group.
 class GemvNRPSGKernel {
 public:
-    GemvNRPSGKernel(MetalContext& context, std::size_t rpsg);
+    GemvNRPSGKernel(MetalContext& context, std::size_t rpsg, std::size_t sgptg);
     ~GemvNRPSGKernel();
     GemvNRPSGKernel(const GemvNRPSGKernel&) = delete;
     GemvNRPSGKernel& operator=(const GemvNRPSGKernel&) = delete;

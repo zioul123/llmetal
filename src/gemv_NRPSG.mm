@@ -18,9 +18,11 @@ namespace llmetal {
 
 class GemvNRPSGKernel::Impl {
 public:
-    explicit Impl(MetalContext& context, std::size_t rpsg): metalContext(context), rpsg(rpsg) {}
+    explicit Impl(MetalContext& context, std::size_t rpsg, std::size_t sgptg): 
+        metalContext(context), rpsg(rpsg), sgptg(sgptg) {}
     MetalContext& metalContext;
-    std::size_t rpsg;
+    std::size_t rpsg; // Rows per SIMD group
+    std::size_t sgptg; // SIMD groups per threadgroup
 private:
     id<MTLComputePipelineState> pipeline_state = nil;
     id<MTLCommandBuffer> lastCommandBuffer = nil;
@@ -34,8 +36,8 @@ private:
 friend class GemvNRPSGKernel;
 };
 
-GemvNRPSGKernel::GemvNRPSGKernel(MetalContext& context, std::size_t rpsg)
-    : impl_(std::make_unique<Impl>(context, rpsg)) {
+GemvNRPSGKernel::GemvNRPSGKernel(MetalContext& context, std::size_t rpsg, std::size_t sgptg)
+    : impl_(std::make_unique<Impl>(context, rpsg, sgptg)) {
     NSError* error = nil;
     id<MTLDevice> device = (__bridge id<MTLDevice>)context.device_handle();
 
@@ -79,8 +81,9 @@ void GemvNRPSGKernel::prepare(GemvShape shape) {
     if (shape.cols == 0 || shape.rows == 0) throw std::runtime_error("Invalid gemv shape");
 
     // We will buffer this to have a multiple of rpsg rows (1, 2, 4 or 8)
-    std::size_t row_groups = (shape.rows + impl_->rpsg - 1) / impl_->rpsg;
-    std::size_t output_elements = row_groups * impl_->rpsg;
+    std::size_t rows_per_threadgroup = impl_->rpsg * impl_->sgptg;
+    std::size_t thread_groups = (shape.rows + rows_per_threadgroup - 1) / rows_per_threadgroup;
+    std::size_t output_elements = thread_groups * rows_per_threadgroup;
     std::size_t matElements = shape.cols * output_elements;
     id<MTLDevice> device = (__bridge id<MTLDevice>)impl_->metalContext.device_handle();
 
@@ -159,9 +162,11 @@ llmetal::MetalJob GemvNRPSGKernel::submit_repeated(std::size_t repeats) {
     [computeEncoder setBytes:&impl_->gemvShape.rows length:sizeof(uint) atIndex:3];
     [computeEncoder setBytes:&impl_->gemvShape.cols length:sizeof(uint) atIndex:4];
 
-    // rpsg rows per simd group, so we have ceil_div(rows, rpsg) threadgroups
-    MTLSize threadGroups = MTLSizeMake((impl_->gemvShape.rows + impl_->rpsg - 1) / impl_->rpsg, 1, 1);
-    MTLSize threadGroupSize = MTLSizeMake([impl_->pipeline_state threadExecutionWidth], 1, 1);
+    // sgptg simd groups per threadgroup, and rpsg rows per simd group
+    NSUInteger rows_per_threadgroup = impl_->sgptg * impl_->rpsg;
+    // so we have ceil_div(rows, rows_per_threadgroup) threadgroups
+    MTLSize threadGroups = MTLSizeMake((impl_->gemvShape.rows + rows_per_threadgroup - 1) / rows_per_threadgroup, 1, 1);
+    MTLSize threadGroupSize = MTLSizeMake([impl_->pipeline_state threadExecutionWidth] * impl_->sgptg, 1, 1);
 
     for (std::size_t i = 0; i < repeats; ++i) {
         [computeEncoder dispatchThreadgroups:threadGroups 
