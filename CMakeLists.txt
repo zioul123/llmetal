@@ -102,7 +102,8 @@ if(LLMETAL_BUILD_BENCHMARKS)
     src/metal_context.mm
     src/gemv_naive.mm
     src/gemv_mps.mm
-    src/gemv_interleaved.mm
+    src/gemv_1RPSG.mm
+    src/gemv_NRPSG.mm
     src/cpu/gemv.cpp
     src/metal_job.mm
   )
@@ -188,7 +189,8 @@ if(BUILD_TESTING)
       src/metal_context.mm
       src/gemv_naive.mm
       src/gemv_mps.mm
-      src/gemv_interleaved.mm
+      src/gemv_1RPSG.mm
+      src/gemv_NRPSG.mm
       src/metal_job.mm
   )
 

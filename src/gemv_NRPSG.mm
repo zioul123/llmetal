@@ -9,17 +9,18 @@
 #include <algorithm>
 
 #include <llmetal/metal_context.hpp>
-#include <llmetal/gemv_interleaved.hpp>
+#include <llmetal/gemv_NRPSG.hpp>
 
 #include <Foundation/Foundation.h>
 #include <Metal/Metal.h>
 
 namespace llmetal {
 
-class GemvInterleavedKernel::Impl {
+class GemvNRPSGKernel::Impl {
 public:
-    explicit Impl(MetalContext& context): metalContext(context) {}
+    explicit Impl(MetalContext& context, std::size_t rpsg): metalContext(context), rpsg(rpsg) {}
     MetalContext& metalContext;
+    std::size_t rpsg;
 private:
     id<MTLComputePipelineState> pipeline_state = nil;
     id<MTLCommandBuffer> lastCommandBuffer = nil;
@@ -30,11 +31,11 @@ private:
     std::size_t capacityVector = 0;
     std::size_t capacityOutput = 0;
     GemvShape gemvShape = {0, 0};
-friend class GemvInterleavedKernel;
+friend class GemvNRPSGKernel;
 };
 
-GemvInterleavedKernel::GemvInterleavedKernel(MetalContext& context)
-    : impl_(std::make_unique<Impl>(context)) {
+GemvNRPSGKernel::GemvNRPSGKernel(MetalContext& context, std::size_t rpsg)
+    : impl_(std::make_unique<Impl>(context, rpsg)) {
     NSError* error = nil;
     id<MTLDevice> device = (__bridge id<MTLDevice>)context.device_handle();
 
@@ -50,8 +51,13 @@ GemvInterleavedKernel::GemvInterleavedKernel(MetalContext& context)
         );
     }
 
-    // From `shaders/gemv.metal`
-    id<MTLFunction> function = [library newFunctionWithName:@"gemv_interleaved"];
+    // From `shaders/gemv.metal` - choose the shader based on desired rpsg
+    id<MTLFunction> function = 
+        rpsg == 1 ? [library newFunctionWithName:@"gemv_1RPSG"]
+        : rpsg == 2 ? [library newFunctionWithName:@"gemv_2RPSG"]
+        : rpsg == 4 ? [library newFunctionWithName:@"gemv_4RPSG"]
+        : rpsg == 8 ? [library newFunctionWithName:@"gemv_8RPSG"]
+        : throw std::runtime_error("Invalid rpsg, expected 1, 2, 4, or 8");
     if (function == nil) throw std::runtime_error("Function not found");
 
     // Create the pipeline state
@@ -64,15 +70,18 @@ GemvInterleavedKernel::GemvInterleavedKernel(MetalContext& context)
     }
 }
 
-GemvInterleavedKernel::~GemvInterleavedKernel() = default;
-GemvInterleavedKernel::GemvInterleavedKernel(GemvInterleavedKernel&&) noexcept = default;
-GemvInterleavedKernel& GemvInterleavedKernel::operator=(GemvInterleavedKernel&&) noexcept = default;
+GemvNRPSGKernel::~GemvNRPSGKernel() = default;
+GemvNRPSGKernel::GemvNRPSGKernel(GemvNRPSGKernel&&) noexcept = default;
+GemvNRPSGKernel& GemvNRPSGKernel::operator=(GemvNRPSGKernel&&) noexcept = default;
 
-void GemvInterleavedKernel::prepare(GemvShape shape) {
+void GemvNRPSGKernel::prepare(GemvShape shape) {
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (shape.cols == 0 || shape.rows == 0) throw std::runtime_error("Invalid gemv shape");
-    
-    std::size_t matElements = shape.cols * shape.rows;
+
+    // We will buffer this to have a multiple of rpsg rows (1, 2, 4 or 8)
+    std::size_t row_groups = (shape.rows + impl_->rpsg - 1) / impl_->rpsg;
+    std::size_t output_elements = row_groups * impl_->rpsg;
+    std::size_t matElements = shape.cols * output_elements;
     id<MTLDevice> device = (__bridge id<MTLDevice>)impl_->metalContext.device_handle();
 
     if (matElements > impl_->capacityMatrix) {
@@ -92,19 +101,19 @@ void GemvInterleavedKernel::prepare(GemvShape shape) {
         impl_->capacityVector = shape.cols;
     }
 
-    if (shape.rows > impl_->capacityOutput) {
-        id<MTLBuffer> bufferOutput = [device newBufferWithLength: shape.rows * sizeof(float) options: MTLResourceStorageModeShared];
+    if (output_elements > impl_->capacityOutput) {
+        id<MTLBuffer> bufferOutput = [device newBufferWithLength: output_elements * sizeof(float) options: MTLResourceStorageModeShared];
         if (bufferOutput == nil) {
             throw std::runtime_error("Failed to create buffers");
         }
         impl_->bufferOutput = bufferOutput;
-        impl_->capacityOutput = shape.rows;
+        impl_->capacityOutput = output_elements;
     }
 
     impl_->gemvShape = shape;
 }
 
-void GemvInterleavedKernel::upload_matrix(std::span<const float> matrix) {
+void GemvNRPSGKernel::upload_matrix(std::span<const float> matrix) {
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (matrix.size() != impl_->gemvShape.cols * impl_->gemvShape.rows) {
         throw std::runtime_error(
@@ -117,7 +126,7 @@ void GemvInterleavedKernel::upload_matrix(std::span<const float> matrix) {
     std::memcpy([impl_->bufferMatrix contents], matrix.data(), matrix.size() * sizeof(float));
 }
 
-void GemvInterleavedKernel::upload_vector(std::span<const float> vector) {
+void GemvNRPSGKernel::upload_vector(std::span<const float> vector) {
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (vector.size() != impl_->gemvShape.cols) {
         throw std::runtime_error(
@@ -129,7 +138,7 @@ void GemvInterleavedKernel::upload_vector(std::span<const float> vector) {
     std::memcpy([impl_->bufferVector contents], vector.data(), vector.size() * sizeof(float));
 }
 
-llmetal::MetalJob GemvInterleavedKernel::submit_repeated(std::size_t repeats) {
+llmetal::MetalJob GemvNRPSGKernel::submit_repeated(std::size_t repeats) {
     if (repeats == 0) throw std::runtime_error("Invalid repeats");
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (impl_->gemvShape.cols == 0 || impl_->gemvShape.rows == 0) throw std::runtime_error("Invalid gemv shape");
@@ -150,7 +159,8 @@ llmetal::MetalJob GemvInterleavedKernel::submit_repeated(std::size_t repeats) {
     [computeEncoder setBytes:&impl_->gemvShape.rows length:sizeof(uint) atIndex:3];
     [computeEncoder setBytes:&impl_->gemvShape.cols length:sizeof(uint) atIndex:4];
 
-    MTLSize threadGroups = MTLSizeMake(impl_->gemvShape.rows, 1, 1);
+    // rpsg rows per simd group, so we have ceil_div(rows, rpsg) threadgroups
+    MTLSize threadGroups = MTLSizeMake((impl_->gemvShape.rows + impl_->rpsg - 1) / impl_->rpsg, 1, 1);
     MTLSize threadGroupSize = MTLSizeMake([impl_->pipeline_state threadExecutionWidth], 1, 1);
 
     for (std::size_t i = 0; i < repeats; ++i) {
@@ -166,11 +176,11 @@ llmetal::MetalJob GemvInterleavedKernel::submit_repeated(std::size_t repeats) {
     return llmetal::MetalJob((__bridge void*) commandBuffer);
 }
 
-llmetal::MetalJob GemvInterleavedKernel::submit() {
+llmetal::MetalJob GemvNRPSGKernel::submit() {
     return submit_repeated(1);
 }
 
-void GemvInterleavedKernel::download(std::span<float> output) {
+void GemvNRPSGKernel::download(std::span<float> output) {
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
     if (output.size() < impl_->gemvShape.rows) {
         throw std::runtime_error(
@@ -182,7 +192,7 @@ void GemvInterleavedKernel::download(std::span<float> output) {
     std::memcpy(output.data(), [impl_->bufferOutput contents], impl_->gemvShape.rows * sizeof(float));
 }
 
-bool GemvInterleavedKernel::in_progress() const noexcept {
+bool GemvNRPSGKernel::in_progress() const noexcept {
     if (impl_->lastCommandBuffer == nil) {
         return false;
     }

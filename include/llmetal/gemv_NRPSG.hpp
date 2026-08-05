@@ -11,14 +11,15 @@ namespace llmetal {
 
 class MetalContext;
 
-class GemvInterleavedKernel {
+// N rows per SIMD group.
+class GemvNRPSGKernel {
 public:
-    GemvInterleavedKernel(MetalContext& context);
-    ~GemvInterleavedKernel();
-    GemvInterleavedKernel(const GemvInterleavedKernel&) = delete;
-    GemvInterleavedKernel& operator=(const GemvInterleavedKernel&) = delete;
-    GemvInterleavedKernel(GemvInterleavedKernel&&) noexcept;
-    GemvInterleavedKernel& operator=(GemvInterleavedKernel&&) noexcept;
+    GemvNRPSGKernel(MetalContext& context, std::size_t rpsg);
+    ~GemvNRPSGKernel();
+    GemvNRPSGKernel(const GemvNRPSGKernel&) = delete;
+    GemvNRPSGKernel& operator=(const GemvNRPSGKernel&) = delete;
+    GemvNRPSGKernel(GemvNRPSGKernel&&) noexcept;
+    GemvNRPSGKernel& operator=(GemvNRPSGKernel&&) noexcept;
 
     void prepare(GemvShape);
     void upload_matrix(std::span<const float> matrix);

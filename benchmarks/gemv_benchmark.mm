@@ -2,7 +2,8 @@
 #include "llmetal/gemv_shape.hpp"
 #include "llmetal/metal_context.hpp"
 #include "llmetal/gemv_naive.hpp"
-#include "llmetal/gemv_interleaved.hpp"
+#include "llmetal/gemv_1RPSG.hpp"
+#include "llmetal/gemv_NRPSG.hpp"
 #include "llmetal/cpu/gemv.hpp"
 
 #include <cmath>
@@ -41,12 +42,12 @@ concept GemvKernel = requires(
     { kernel.download(output) } -> std::same_as<void>;
 };
 
-struct BenchmarkDetails {
+struct BenchmarkConfig {
     std::string_view name;
     llmetal::GemvShape shape;
 };
 
-struct BenchmarkConfig {
+struct BenchmarkConfigWithData {
     std::string_view name;
     llmetal::GemvShape shape;
     std::span<const float> matrix;
@@ -62,7 +63,7 @@ constexpr int time_width    = 16;
 constexpr int total_time_width = 19;  // 12 digits + " us"
 struct BenchmarkResult {
     std::string backend;
-    BenchmarkConfig config;
+    BenchmarkConfigWithData config;
 
     std::chrono::nanoseconds single_host_min;
     std::chrono::nanoseconds single_host_median;
@@ -96,15 +97,15 @@ struct BenchmarkResult {
                 std::to_string(config.shape.cols))
             << std::right
             << std::setw(time_width)
-            << std::chrono::duration_cast<us>(batched_gpu_per_dispatch).count() << " us"
+            << std::chrono::duration_cast<ns>(batched_gpu_per_dispatch).count() << " ns"
             << std::setw(time_width)
-            << std::chrono::duration_cast<us>(batched_host_per_dispatch).count() << " us"
+            << std::chrono::duration_cast<ns>(batched_host_per_dispatch).count() << " ns"
             << std::setw(time_width)
-            << std::chrono::duration_cast<us>(single_host_min).count() << " us"
+            << std::chrono::duration_cast<ns>(single_host_min).count() << " ns"
             << std::setw(time_width)
-            << std::chrono::duration_cast<us>(single_host_median).count() << " us"
+            << std::chrono::duration_cast<ns>(single_host_median).count() << " ns"
             << std::setw(time_width)
-            << std::chrono::duration_cast<us>(single_host_p95).count() << " us"
+            << std::chrono::duration_cast<ns>(single_host_p95).count() << " ns"
             << '\n';
     }
 };
@@ -128,7 +129,7 @@ struct ValidationResult {
 namespace Benchmark {
 
 template <GemvKernel Kernel>
-BenchmarkResult run(Kernel& kernel, BenchmarkConfig config, std::string_view backend) {
+BenchmarkResult run(Kernel& kernel, BenchmarkConfigWithData config, std::string_view backend) {
     if (config.timed_runs == 0) throw std::invalid_argument("timed_runs must be greater than 0");
 
     // Prepare kernel
@@ -255,9 +256,13 @@ int main() {
         llmetal::MetalContext context;
         llmetal::GemvNaiveKernel naiveKernel(context);
         llmetal::GemvMpsKernel mpsKernel(context);
-        llmetal::GemvInterleavedKernel interleavedKernel(context);
+        llmetal::Gemv1RPSGKernel oneRPSGKernel1(context);
+        llmetal::GemvNRPSGKernel oneRPSGKernel2(context, 1);
+        llmetal::GemvNRPSGKernel twoRPSGKernel(context, 2);
+        llmetal::GemvNRPSGKernel fourRPSGKernel(context, 4);
+        llmetal::GemvNRPSGKernel eightRPSGKernel(context, 8);
         
-        BenchmarkDetails details[] = {
+        BenchmarkConfig details[] = {
             { "1024x1024", 1024, 1024},
             { "2048x1024", 2048, 1024},
             { "1024x2048", 1024, 2048},
@@ -267,21 +272,20 @@ int main() {
             { "8192x8192", 8192, 8192},
             { "11008x4096", 11008, 4096},
             { "4096x11008", 4096, 11008},
-            
         };
 
-        for (auto const &detail : details) {
-            std::cout << "=== " << detail.name << " ===" << std::endl;
+        for (BenchmarkConfig const &config : details) {
+            std::cout << "=== " << config.name << " ===" << std::endl;
 
             // === Preparation ===
 
             // Generate random data
-            std::size_t element_count = detail.shape.cols * detail.shape.rows;
+            std::size_t element_count = config.shape.cols * config.shape.rows;
             std::vector<float> matrix(element_count);
-            std::vector<float> vector(detail.shape.cols);
-            std::vector<float> expect(detail.shape.rows);
-            BenchmarkConfig config = {
-                detail.name, detail.shape, matrix, vector
+            std::vector<float> vector(config.shape.cols);
+            std::vector<float> expect(config.shape.rows);
+            BenchmarkConfigWithData config_with_data = {
+                config.name, config.shape, matrix, vector
             };
             
             std::mt19937 rng(element_count);
@@ -292,48 +296,50 @@ int main() {
             // === Validation pass ===
 
             // Produce CPU result and fixture
-            llmetal::cpu::gemv_f32(config.shape, matrix, vector, expect);
-            ValidationFixture fixture {
-                config.name, config.shape, matrix, vector, expect 
-            };
+            llmetal::cpu::gemv_f32(config_with_data.shape, matrix, vector, expect);
+            ValidationFixture fixture { config_with_data.name, config_with_data.shape, matrix, vector, expect };
 
             // Validate the implementations
-            auto naiveValidation = Validate::run(naiveKernel, fixture, "naive");
-            auto mpsValidation = Validate::run(mpsKernel, fixture, "mps");
-            auto interleavedValidation = Validate::run(interleavedKernel, fixture, "interleaved");
-            // ValidationResult transposedValidation = Validate::transposed(context, config);
-            // ValidationResult interleavedValidation = Validate::interleaved(context, config);
-
+            ValidationResult validationResults[] = {
+                Validate::run(naiveKernel,     fixture, "naive"),
+                Validate::run(mpsKernel,       fixture, "mps"),
+                Validate::run(oneRPSGKernel1,  fixture, "1rpsg1"),
+                Validate::run(oneRPSGKernel2,  fixture, "1rpsg2"),
+                Validate::run(twoRPSGKernel,   fixture, "2rpsg"),
+                Validate::run(fourRPSGKernel,  fixture, "4rpsg"),
+                Validate::run(eightRPSGKernel, fixture, "8rpsg"),
+            };
+            
             // Print validation results
             std::cout << "Validation:\n";
-            for (auto const &result : {
-                naiveValidation, mpsValidation, interleavedValidation // transposedValidation, interleavedValidation
-            }) {
+            bool any_failed = false;
+            for (auto const &result : validationResults) {
                 if (!result.valid) {
                     std::cerr << "  " << result.backend << ": failed - " << result.error << '\n';
+                    any_failed = true;
                 } else {
                     std::cout << "  " << result.backend << ": passed\n";
                 }
             }
-            if (!naiveValidation.valid || !mpsValidation.valid || !interleavedValidation.valid) {
+            std::cout << std::endl;
+            if (any_failed) {
                 std::cerr << "Skipping benchmarks because validation failed." << std::endl;
                 return 1;
             }
 
             // === Benchmark pass ===
-            
-            auto naiveBenchmark = Benchmark::run(naiveKernel, config, "naive");
-            auto mpsBenchmark = Benchmark::run(mpsKernel, config, "mps");
-            auto interleavedBenchmark = Benchmark::run(interleavedKernel, config, "interleaved");
-            // BenchmarkResult transposedBenchmark = Benchmark::transposed(context, config);
-            std::cout << std::endl;
-
+            BenchmarkResult benchmarkResults[] = {
+                Benchmark::run(naiveKernel,     config_with_data, "naive"),
+                Benchmark::run(mpsKernel,       config_with_data, "mps"),
+                Benchmark::run(oneRPSGKernel1,  config_with_data, "1rpsg1"),
+                Benchmark::run(oneRPSGKernel2,  config_with_data, "1rpsg2"),
+                Benchmark::run(twoRPSGKernel,   config_with_data, "2rpsg"),
+                Benchmark::run(fourRPSGKernel,  config_with_data, "4rpsg"),
+                Benchmark::run(eightRPSGKernel, config_with_data, "8rpsg"),
+            };
             // Table header
-            naiveBenchmark.printHeader();
-
-            for (auto const &result : {
-                naiveBenchmark, mpsBenchmark, interleavedBenchmark, // transposedBenchmark
-            }) {
+            benchmarkResults[0].printHeader();
+            for (auto const &result : benchmarkResults) {
                 result.printRow();
             }
             
