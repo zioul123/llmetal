@@ -1,19 +1,15 @@
 #pragma once
 
-#include <functional>
 #include <initializer_list>
-#include <numeric>
 #include <type_traits>
 #include <vector>
 #include <iostream>
 #include <iomanip>
 #include <span>
 
-namespace llmetal {
+#include "llmetal/overflow_helpers.hpp"
 
-enum class DType {
-    FLoat32,
-};
+namespace llmetal {
 
 class Shape {
 public:
@@ -22,10 +18,11 @@ public:
     
     std::size_t rank() const noexcept { return dims_.size(); }
     std::size_t numel() const { 
-        return std::accumulate(dims_.begin(),
-        dims_.end(),
-        std::size_t{1},
-        std::multiplies<>{});  
+        std::size_t result = 1;
+        for (const std::size_t dimension : dims_) {
+            result = checked_multiply(result, dimension);
+        }
+        return result;
     }
     std::span<const std::size_t> dims() const noexcept { return dims_; }
     
@@ -52,7 +49,7 @@ public:
     
     const Shape& shape() const noexcept { return shape_; }
     std::size_t numel() const { return data_.size(); }
-    std::size_t byte_size() const noexcept { return data_.size() * sizeof(T); }
+    std::size_t byte_size() const { return checked_multiply(data_.size(), sizeof(T)); }
     T* data() noexcept { return data_.data(); }
     const T* data() const noexcept { return data_.data(); }
     std::span<T> span() noexcept { return data_; }
@@ -127,8 +124,8 @@ public:
     ~GpuTensor() = default;
     
     [[nodiscard]] const Shape& shape() const noexcept { return shape_; }
-    [[nodiscard]] std::size_t numel() const noexcept { return shape_.numel(); }
-    [[nodiscard]] std::size_t byte_size() const noexcept { return shape_.numel() * sizeof(T); }
+    [[nodiscard]] std::size_t numel() const { return shape_.numel(); }
+    [[nodiscard]] std::size_t byte_size() const { return checked_multiply(shape_.numel(), sizeof(T)); }
 
 private:
     GpuTensor(Shape shape, std::shared_ptr<detail::GpuStorage> storage, std::size_t byte_offset = 0)

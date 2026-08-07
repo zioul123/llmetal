@@ -1,4 +1,5 @@
 #include "llmetal/cpu/embedding.hpp"
+#include <cstdint>
 #include <llmetal/tensor.hpp>
 #include "llmetal/embedding.hpp"
 #include "llmetal/metal_context.hpp"
@@ -79,12 +80,14 @@ int main() {
 
         constexpr std::size_t batch_size = 2;
         constexpr std::size_t sequence_length = 3;
-        constexpr std::size_t vocab_size = 4;
+        constexpr std::uint32_t vocab_size = 4;
         constexpr std::size_t hidden_size = 5;
 
-        constexpr std::size_t token_count = batch_size * sequence_length;
-        constexpr std::size_t table_count = vocab_size * hidden_size;
-        constexpr std::size_t expected_count = batch_size * sequence_length * hidden_size;
+        constexpr std::size_t token_count = checked_multiply(batch_size, sequence_length);
+        constexpr std::size_t table_count = checked_multiply(vocab_size, hidden_size);
+        constexpr std::size_t expected_count = checked_multiply(checked_multiply(batch_size,
+                                                                                     sequence_length), 
+                                                                hidden_size);
 
         // Convert the ids from long to uint32
         std::vector<long long> ids_vector_long(
@@ -111,7 +114,7 @@ int main() {
         llmetal::CpuTensor<float> output_tensor(
             llmetal::Shape{batch_size, sequence_length, hidden_size}
         );
-        llmetal::cpu::embedding(table_tensor, ids_tensor, output_tensor);
+        llmetal::cpu::embedding(table_tensor, ids_tensor, output_tensor, vocab_size);
         
         llmetal::MetalContext context;
         llmetal::EmbeddingKernel kernel(context);
@@ -121,7 +124,7 @@ int main() {
             llmetal::Shape{batch_size, sequence_length, hidden_size}
         );
         auto job = kernel.submit(
-            table_tensor_gpu, ids_tensor_gpu, output_tensor_gpu
+            table_tensor_gpu, ids_tensor_gpu, output_tensor_gpu, vocab_size
         );
         job.wait();
         auto output_tensor_gpu_cpu = context.download(output_tensor_gpu);

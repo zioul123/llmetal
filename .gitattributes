@@ -1,0 +1,7 @@
+# Raw numeric tensor fixtures
+*.f32 binary
+*.f16 binary
+*.i32 binary
+*.i64 binary
+*.u32 binary
+*.u64 binary

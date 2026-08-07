@@ -1,5 +1,4 @@
-
-
+#pragma once
 
 #include "llmetal/tensor.hpp"
 #include "llmetal/metal_job.hpp"
@@ -20,13 +19,15 @@ public:
     llmetal::MetalJob submit(
         const GpuTensor<float>& table,       // [vocab_size, hidden]
         const GpuTensor<std::uint32_t>& ids, // [batch_size, sequence_length]
-        const GpuTensor<float>& output       // [batch_size, sequence_length, hidden]
+        GpuTensor<float>& output,      // [batch_size, sequence_length, hidden]
+        std::uint32_t vocab_size
     );
     llmetal::MetalJob submit_repeated(
         std::size_t repeats,
         const GpuTensor<float>& table,       // [vocab_size, hidden]
         const GpuTensor<std::uint32_t>& ids, // [batch_size, sequence_length]
-        const GpuTensor<float>& output       // [batch_size, sequence_length, hidden]
+        GpuTensor<float>& output,      // [batch_size, sequence_length, hidden]
+        std::uint32_t vocab_size
     );
 
     bool in_progress() const noexcept;

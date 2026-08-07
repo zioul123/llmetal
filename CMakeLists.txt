@@ -236,7 +236,6 @@ if(BUILD_TESTING)
       tests/embedding_smoke.cpp
       src/cpu/embedding.cpp
       src/metal_context.mm
-      src/tensor.mm
       src/embedding.mm
       src/tensor.mm
       src/metal_job.mm

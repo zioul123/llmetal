@@ -56,14 +56,33 @@ MetalJob EmbeddingKernel::submit_repeated(
     std::size_t repeats,
     const GpuTensor<float>& table,       // [vocab_size, hidden]
     const GpuTensor<std::uint32_t>& ids, // [batch_size, sequence_length]
-    const GpuTensor<float>& output       // [batch_size, sequence_length, hidden]
+    GpuTensor<float>& output,            // [batch_size, sequence_length, hidden]
+    std::uint32_t vocab_size
 ) {
-    uint hidden_size = table.shape()[1];
-    uint n_input_tokens = ids.shape()[0] * ids.shape()[1];
+    // Pull out shape information
+    std::size_t hidden_size = table.shape()[1];
+    std::size_t batch_size = ids.shape()[0];
+    std::size_t sequence_length = ids.shape()[1];
+    std::size_t n_input_tokens = checked_multiply(batch_size, sequence_length);
+
     if (n_input_tokens == 0) throw std::runtime_error("Invalid input size");
     if (hidden_size == 0) throw std::runtime_error("Invalid hidden size");
+    
+    if (vocab_size * hidden_size != table.numel()) throw std::runtime_error("Invalid table size");
+    if (table.shape().rank() != 2) throw std::runtime_error("Invalid table shape, expected [vocab_size, hidden]");
+    
+    if (n_input_tokens != ids.numel()) throw std::runtime_error("Invalid ids size");
+    if (ids.shape().rank() != 2) throw std::runtime_error("Invalid ids shape, expected [batch_size, sequence_length]");
+    
+    if (output.shape()[0] != batch_size || output.shape()[1] != sequence_length || output.shape()[2] != hidden_size) {
+        throw std::runtime_error("Invalid output size");
+    }
+    if (output.shape().rank() != 3) throw std::runtime_error("Invalid output shape, expected [batch_size, sequence_length, hidden]");
+
     if (repeats == 0) throw std::runtime_error("Invalid repeats");
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
+
+    const std::uint32_t hidden_size_u32 = checked_u32(hidden_size, "hidden_size");
 
     id<MTLCommandQueue> commandQueue = (__bridge id<MTLCommandQueue>)impl_->metalContext.command_queue_handle();
 
@@ -78,8 +97,8 @@ MetalJob EmbeddingKernel::submit_repeated(
     [computeEncoder setBuffer:(__bridge id<MTLBuffer>)table.buffer_handle()  offset:table.byte_offset_  atIndex:0];
     [computeEncoder setBuffer:(__bridge id<MTLBuffer>)ids.buffer_handle()    offset:ids.byte_offset_    atIndex:1];
     [computeEncoder setBuffer:(__bridge id<MTLBuffer>)output.buffer_handle() offset:output.byte_offset_ atIndex:2];
-    [computeEncoder setBytes:&hidden_size length:sizeof(uint) atIndex:3];
-
+    [computeEncoder setBytes:&hidden_size_u32 length:sizeof(uint) atIndex:3];
+    [computeEncoder setBytes:&vocab_size      length:sizeof(uint) atIndex:4];
 
     // Naive - just one thread per row
     MTLSize gridSize = MTLSizeMake(n_input_tokens, 1, 1);
@@ -102,9 +121,10 @@ MetalJob EmbeddingKernel::submit_repeated(
 MetalJob EmbeddingKernel::submit(
     const GpuTensor<float>& table,       // [vocab_size, hidden]
     const GpuTensor<std::uint32_t>& ids, // [batch_size, sequence_length]
-    const GpuTensor<float>& output       // [batch_size, sequence_length, hidden]
+    GpuTensor<float>& output,      // [batch_size, sequence_length, hidden]
+    std::uint32_t vocab_size
 ) {
-    return submit_repeated(1, table, ids, output);
+    return submit_repeated(1, table, ids, output, vocab_size);
 }
 
 bool EmbeddingKernel::in_progress() const noexcept {
