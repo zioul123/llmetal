@@ -198,9 +198,7 @@ void GemvNRPSGKernel::download(std::span<float> output) {
 }
 
 bool GemvNRPSGKernel::in_progress() const noexcept {
-    if (impl_->lastCommandBuffer == nil) {
-        return false;
-    }
+    if (impl_->lastCommandBuffer == nil) return false;
     const auto status = impl_->lastCommandBuffer.status;
     return status != MTLCommandBufferStatusCompleted &&
            status != MTLCommandBufferStatusError;

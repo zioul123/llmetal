@@ -10,6 +10,7 @@ target_sources(LLMetal
   PRIVATE
     src/main.cpp
     src/metal_context.mm
+    src/tensor.mm
     src/vector_add.mm
 )
 
@@ -60,6 +61,7 @@ find_program(XCRUN xcrun REQUIRED)
 set(LLMETAL_SHADER_NAMES
   vector_add
   gemv
+  embedding
 )
 
 set(LLMETAL_METALLIBS)
@@ -100,6 +102,7 @@ if(LLMETAL_BUILD_BENCHMARKS)
   add_executable(LLMetalGemvBenchmark
     benchmarks/gemv_benchmark.mm
     src/metal_context.mm
+    src/tensor.mm
     src/gemv_naive.mm
     src/gemv_mps.mm
     src/gemv_NRPSG.mm
@@ -145,6 +148,7 @@ if(BUILD_TESTING)
     PRIVATE
       tests/vector_add_smoke.cpp
       src/metal_context.mm
+      src/tensor.mm
       src/vector_add.mm
   )
 
@@ -186,6 +190,7 @@ if(BUILD_TESTING)
     PRIVATE
       tests/gemv_smoke.cpp
       src/metal_context.mm
+      src/tensor.mm
       src/gemv_naive.mm
       src/gemv_mps.mm
       src/gemv_NRPSG.mm
@@ -221,4 +226,52 @@ if(BUILD_TESTING)
   add_dependencies(LLMetalGemvSmoke MetalLibs)
 
   add_test(NAME gemv_smoke COMMAND LLMetalGemvSmoke)
+
+  # --- LLMetalEmbeddingSmoke ---
+
+  add_executable(LLMetalEmbeddingSmoke)
+
+  target_sources(LLMetalEmbeddingSmoke
+    PRIVATE
+      tests/embedding_smoke.cpp
+      src/cpu/embedding.cpp
+      src/metal_context.mm
+      src/tensor.mm
+      src/embedding.mm
+      src/tensor.mm
+      src/metal_job.mm
+  )
+
+  target_include_directories(LLMetalEmbeddingSmoke
+    PRIVATE
+      include
+  )
+
+  set_target_properties(LLMetalEmbeddingSmoke PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalEmbeddingSmoke PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalEmbeddingSmoke
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalEmbeddingSmoke MetalLibs)
+
+  add_test(NAME embedding COMMAND LLMetalEmbeddingSmoke)
+  set_tests_properties(embedding PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
 endif()

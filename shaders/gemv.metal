@@ -16,7 +16,6 @@ kernel void gemv_naive(
         result += inMatrix[index * cols + k] * inVector[k];
     }
     output[index] = result;
-
 }
 
 // === N Rows per SIMD group, 4 unrolled variants ===

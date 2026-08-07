@@ -1,0 +1,50 @@
+{
+  "format": "llmetal-raw-fixture",
+  "format_version": 1,
+  "source": "01_embedding_toy.npz",
+  "arrays": {
+    "ids": {
+      "file": "ids.i64",
+      "dtype": "int64",
+      "cpp_type": "std::int64_t",
+      "shape": [
+        2,
+        3
+      ],
+      "element_count": 6,
+      "byte_count": 48,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "dfc36c299710621ce18a53925bf31ba6eb0dd74485f89aad25a2a8cad6a4e862"
+    },
+    "table": {
+      "file": "table.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        4,
+        5
+      ],
+      "element_count": 20,
+      "byte_count": 80,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "52dd918691dcfb96b2a1a70bc457df82fb5c4dfa509c4f5337a4566408caaadf"
+    },
+    "expected": {
+      "file": "expected.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        2,
+        3,
+        5
+      ],
+      "element_count": 30,
+      "byte_count": 120,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "555f522740ee24f4338564890911ea796f92a13af0e1b6f78e2758f6f87eb809"
+    }
+  }
+}

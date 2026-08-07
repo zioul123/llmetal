@@ -25,6 +25,7 @@ private:
     friend class GemvNaiveKernel;
     friend class GemvMpsKernel;
     friend class GemvNRPSGKernel;
+    friend class EmbeddingKernel;
 };
 
 } // namespace llmetal
