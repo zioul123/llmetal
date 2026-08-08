@@ -9,7 +9,8 @@ class MetalContext;
 
 class EmbeddingKernel {
 public:
-    EmbeddingKernel(MetalContext& context);
+    // tptg: threads per thread group, tpr: threads per row
+    EmbeddingKernel(MetalContext& context, std::uint32_t tptg, std::uint32_t tpr);
     ~EmbeddingKernel();
     EmbeddingKernel(const EmbeddingKernel&) = delete;
     EmbeddingKernel& operator=(const EmbeddingKernel&) = delete;
@@ -19,15 +20,13 @@ public:
     llmetal::MetalJob submit(
         const GpuTensor<float>& table,       // [vocab_size, hidden]
         const GpuTensor<std::uint32_t>& ids, // [batch_size, sequence_length]
-        GpuTensor<float>& output,      // [batch_size, sequence_length, hidden]
-        std::uint32_t vocab_size
+        GpuTensor<float>& output             // [batch_size, sequence_length, hidden]
     );
     llmetal::MetalJob submit_repeated(
         std::size_t repeats,
         const GpuTensor<float>& table,       // [vocab_size, hidden]
         const GpuTensor<std::uint32_t>& ids, // [batch_size, sequence_length]
-        GpuTensor<float>& output,      // [batch_size, sequence_length, hidden]
-        std::uint32_t vocab_size
+        GpuTensor<float>& output             // [batch_size, sequence_length, hidden]
     );
 
     bool in_progress() const noexcept;

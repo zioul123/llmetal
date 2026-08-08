@@ -10,16 +10,19 @@ namespace llmetal {
 
 class EmbeddingKernel::Impl {
 public:
-    explicit Impl(MetalContext& context): metalContext(context) {};
+    explicit Impl(MetalContext& context, std::uint32_t tptg, std::uint32_t tpr)
+        : metalContext(context), tptg(tptg), tpr(tpr) {};
     MetalContext& metalContext;
+    std::uint32_t tptg; // threads per threadgroup
+    std::uint32_t tpr;  // threads per row
 private:
     id<MTLComputePipelineState> pipeline_state = nil;
     id<MTLCommandBuffer> lastCommandBuffer = nil;
 friend class EmbeddingKernel;
 };
 
-EmbeddingKernel::EmbeddingKernel(MetalContext& context)
-    : impl_(std::make_unique<Impl>(context)) {
+EmbeddingKernel::EmbeddingKernel(MetalContext& context, std::uint32_t tptg, std::uint32_t tpr)
+    : impl_(std::make_unique<Impl>(context, tptg, tpr)) {
     NSError* error = nil;
     id<MTLDevice> device = (__bridge id<MTLDevice>)context.device_handle();
 
@@ -35,7 +38,15 @@ EmbeddingKernel::EmbeddingKernel(MetalContext& context)
         );
     }
 
-    id<MTLFunction> function = [library newFunctionWithName:@"embedding_naive"];
+    if (tptg % tpr != 0) {
+        throw std::runtime_error("tptg must be a multiple of tpr");
+    }
+
+    id<MTLFunction> function = tpr == 1 ? [library newFunctionWithName:@"embedding_naive"]
+                             : tpr < impl_->pipeline_state.threadExecutionWidth 
+                                ? [library newFunctionWithName:@"embedding_tpr"]
+                                : [library newFunctionWithName:@"embedding_nsgpr"];
+
     if (function == nil) throw std::runtime_error("Function not found");
 
     impl_->pipeline_state = [device newComputePipelineStateWithFunction:function error:&error];
@@ -45,6 +56,31 @@ EmbeddingKernel::EmbeddingKernel(MetalContext& context)
             + [error.localizedDescription UTF8String]
         );
     }
+
+    // Very dumb - just wanted the pipeline state to be created to get execution width
+    if (tpr != 1) {
+        // Validate that tpr, if more than the size of a simd group, is a multiple. 
+        // TODO: Unfortunately, this must be done after we created the pipeline state, so it's in a weird place.
+        if (tpr >= impl_->pipeline_state.threadExecutionWidth && 
+            tpr % impl_->pipeline_state.threadExecutionWidth != 0
+        ) {
+            throw std::runtime_error("tpr must be less than or a multiple of the thread execution width (SIMD Group size)");
+        }
+        function = tpr < impl_->pipeline_state.threadExecutionWidth 
+                 ? [library newFunctionWithName:@"embedding_tpr"]
+                 : [library newFunctionWithName:@"embedding_nsgpr"];
+
+        if (function == nil) throw std::runtime_error("Function not found");
+
+        impl_->pipeline_state = [device newComputePipelineStateWithFunction:function error:&error];
+        if (impl_->pipeline_state == nil) {
+            throw std::runtime_error(
+                std::string("Failed to create pipeline state: ") 
+                + [error.localizedDescription UTF8String]
+            );
+        }
+    }
+
 }
     
 EmbeddingKernel::~EmbeddingKernel() = default;
@@ -56,10 +92,10 @@ MetalJob EmbeddingKernel::submit_repeated(
     std::size_t repeats,
     const GpuTensor<float>& table,       // [vocab_size, hidden]
     const GpuTensor<std::uint32_t>& ids, // [batch_size, sequence_length]
-    GpuTensor<float>& output,            // [batch_size, sequence_length, hidden]
-    std::uint32_t vocab_size
+    GpuTensor<float>& output            // [batch_size, sequence_length, hidden]
 ) {
     // Pull out shape information
+    std::uint32_t vocab_size = checked_u32(table.shape()[0], "vocab_size");
     std::size_t hidden_size = table.shape()[1];
     std::size_t batch_size = ids.shape()[0];
     std::size_t sequence_length = ids.shape()[1];
@@ -83,6 +119,7 @@ MetalJob EmbeddingKernel::submit_repeated(
     if (in_progress()) throw std::runtime_error("Kernel is already in progress");
 
     const std::uint32_t hidden_size_u32 = checked_u32(hidden_size, "hidden_size");
+    const std::uint32_t n_input_tokens_u32 = checked_u32(n_input_tokens, "n_input_tokens");
 
     id<MTLCommandQueue> commandQueue = (__bridge id<MTLCommandQueue>)impl_->metalContext.command_queue_handle();
 
@@ -100,31 +137,55 @@ MetalJob EmbeddingKernel::submit_repeated(
     [computeEncoder setBytes:&hidden_size_u32 length:sizeof(uint) atIndex:3];
     [computeEncoder setBytes:&vocab_size      length:sizeof(uint) atIndex:4];
 
-    // Naive - just one thread per row
-    MTLSize gridSize = MTLSizeMake(n_input_tokens, 1, 1);
-    NSUInteger upperBound = [impl_->pipeline_state threadExecutionWidth];
-    upperBound = (upperBound > gridSize.width) ? gridSize.width : upperBound;
-    MTLSize threadGroupSize = MTLSizeMake(upperBound, 1, 1);
+    if (impl_->tpr == 1) {
+        // Naive - just one thread per row
+        MTLSize gridSize = MTLSizeMake(n_input_tokens, 1, 1);
+        NSUInteger upperBound = impl_->tptg;
+        upperBound = (upperBound > gridSize.width) ? gridSize.width : upperBound;
+        MTLSize threadGroupSize = MTLSizeMake(upperBound, 1, 1);
 
-    for (std::size_t i = 0; i < repeats; ++i) {
-        [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+        for (std::size_t i = 0; i < repeats; ++i) {
+            [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+        }
+
+        [computeEncoder endEncoding];
+        [commandBuffer commit];
+        impl_->lastCommandBuffer = commandBuffer;
+        return llmetal::MetalJob((__bridge void*) commandBuffer);
+    } else if (impl_->tpr < impl_->pipeline_state.threadExecutionWidth) {
+        // some threads per row
+        throw std::runtime_error("Not implemented");
+    } else {
+        // Rows per threadgroup
+        NSUInteger rptg = impl_->tptg / impl_->tpr;
+        // SIMD groups per row
+        NSUInteger sgpr = impl_->tpr / impl_->pipeline_state.threadExecutionWidth;
+        [computeEncoder setBytes:&rptg               length:sizeof(uint) atIndex:5];
+        [computeEncoder setBytes:&impl_->tpr         length:sizeof(uint) atIndex:6];
+        [computeEncoder setBytes:&n_input_tokens_u32 length:sizeof(uint) atIndex:7];
+        [computeEncoder setBytes:&sgpr               length:sizeof(uint) atIndex:8];
+
+        // Number of thread groups is ceil_div(rows, rows per threadgroup)
+        MTLSize gridSize = MTLSizeMake(1 , (n_input_tokens + rptg - 1) / rptg, 1);
+        MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, rptg, 1);
+
+        for (std::size_t i = 0; i < repeats; ++i) {
+            [computeEncoder dispatchThreadgroups:gridSize threadsPerThreadgroup:threadGroupSize];
+        }
+
+        [computeEncoder endEncoding];
+        [commandBuffer commit];
+        impl_->lastCommandBuffer = commandBuffer;
+        return llmetal::MetalJob((__bridge void*) commandBuffer);
     }
-
-    [computeEncoder endEncoding];
-
-    // Execute command
-    [commandBuffer commit];
-    impl_->lastCommandBuffer = commandBuffer;
-    return llmetal::MetalJob((__bridge void*) commandBuffer);
 }
 
 MetalJob EmbeddingKernel::submit(
     const GpuTensor<float>& table,       // [vocab_size, hidden]
     const GpuTensor<std::uint32_t>& ids, // [batch_size, sequence_length]
-    GpuTensor<float>& output,      // [batch_size, sequence_length, hidden]
-    std::uint32_t vocab_size
+    GpuTensor<float>& output      // [batch_size, sequence_length, hidden]
 ) {
-    return submit_repeated(1, table, ids, output, vocab_size);
+    return submit_repeated(1, table, ids, output);
 }
 
 bool EmbeddingKernel::in_progress() const noexcept {

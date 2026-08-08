@@ -117,14 +117,14 @@ int main() {
         llmetal::cpu::embedding(table_tensor, ids_tensor, output_tensor, vocab_size);
         
         llmetal::MetalContext context;
-        llmetal::EmbeddingKernel kernel(context);
+        llmetal::EmbeddingKernel kernel(context, 32, 1);
         auto table_tensor_gpu = context.upload(table_tensor);
         auto ids_tensor_gpu = context.upload(ids_tensor);
         auto output_tensor_gpu = context.allocate<float>(
             llmetal::Shape{batch_size, sequence_length, hidden_size}
         );
         auto job = kernel.submit(
-            table_tensor_gpu, ids_tensor_gpu, output_tensor_gpu, vocab_size
+            table_tensor_gpu, ids_tensor_gpu, output_tensor_gpu
         );
         job.wait();
         auto output_tensor_gpu_cpu = context.download(output_tensor_gpu);

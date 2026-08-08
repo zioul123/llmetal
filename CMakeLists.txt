@@ -99,6 +99,7 @@ add_dependencies(LLMetal MetalLibs)
 option(LLMETAL_BUILD_BENCHMARKS "Build LLMetal benchmarks" ON)
 
 if(LLMETAL_BUILD_BENCHMARKS)
+  # --- Gemv benchmark ---
   add_executable(LLMetalGemvBenchmark
     benchmarks/gemv_benchmark.mm
     src/metal_context.mm
@@ -133,6 +134,40 @@ if(LLMETAL_BUILD_BENCHMARKS)
   )
 
   add_dependencies(LLMetalGemvBenchmark MetalLibs)
+
+  # --- Embedding benchmark ---
+  add_executable(LLMetalEmbeddingBenchmark
+    benchmarks/embedding_benchmark.mm
+    src/metal_context.mm
+    src/metal_job.mm
+    src/tensor.mm
+    src/embedding.mm
+    src/cpu/embedding.cpp
+  )
+
+  target_include_directories(LLMetalEmbeddingBenchmark PRIVATE include)
+
+  set_target_properties(LLMetalEmbeddingBenchmark PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalEmbeddingBenchmark PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalEmbeddingBenchmark
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalEmbeddingBenchmark MetalLibs)
 endif()
 
 

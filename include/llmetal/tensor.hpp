@@ -4,6 +4,7 @@
 #include <type_traits>
 #include <vector>
 #include <iostream>
+#include <sstream>
 #include <iomanip>
 #include <span>
 
@@ -27,6 +28,11 @@ public:
     std::span<const std::size_t> dims() const noexcept { return dims_; }
     
     std::size_t operator[](std::size_t axis) const { return dims_.at(axis); }
+    friend std::ostream& operator<<(std::ostream& os, const Shape& shape);
+    std::string to_string() const {
+        std::ostringstream oss; oss << *this; return oss.str();
+    }
+
 private:
     std::vector<std::size_t> dims_;
 };
