@@ -4,7 +4,7 @@
 #include <memory>
 #include <span>
 
-#include "llmetal/gemv_shape.hpp"
+#include "llmetal/tensor.hpp"
 #include "llmetal/metal_job.hpp"
 
 namespace llmetal {
@@ -20,14 +20,19 @@ public:
     GemvNaiveKernel(GemvNaiveKernel&&) noexcept;
     GemvNaiveKernel& operator=(GemvNaiveKernel&&) noexcept;
 
-    void prepare(GemvShape);
-    void upload_matrix(std::span<const float> matrix);
-    void upload_vector(std::span<const float> vector);
-    llmetal::MetalJob submit();
+    llmetal::MetalJob submit(
+        const GpuTensor<float>& matrix, // [rows, cols]
+        const GpuTensor<float>& vector, // [cols]
+        GpuTensor<float>& output        // [rows]
+    );
     // Used for benchmarking
-    llmetal::MetalJob submit_repeated(std::size_t repeats);
-    void download(std::span<float> output);
-
+    llmetal::MetalJob submit_repeated(
+        std::size_t repeats,
+        const GpuTensor<float>& matrix, // [rows, cols]
+        const GpuTensor<float>& vector, // [cols]
+        GpuTensor<float>& output        // [rows]
+    );
+    
     // Before submit(), this is False.
     // After submit(), this is True if the command buffer is still running.
     // Multiple submissions are allowed - this will be False between completion

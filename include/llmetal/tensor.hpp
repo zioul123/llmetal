@@ -144,6 +144,8 @@ private:
 
     friend class MetalContext;
     friend class EmbeddingKernel;
+    friend class GemvNaiveKernel;
+    friend class GemvNRPSGKernel;
 };
 
 }

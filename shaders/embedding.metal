@@ -33,16 +33,8 @@ kernel void embedding_tpr(
     uint index                   [[thread_position_in_grid]],
     uint grid_size               [[threads_per_grid]]
 ) {
-    if (index >= grid_size) return;
-
-    uint token_id = inVector[index];
-    if (token_id >= vocab_size) return; 
-    
-    uint input_offset = token_id * hidden_size;
-    uint output_offset = index * hidden_size;
-    for (uint h = 0; h < hidden_size; ++h) {
-        output[output_offset + h] = table[input_offset + h];
-    }
+    // TODO: Not yet implemented.
+    return;
 }
 
 // Used for when there is more than 32 threads per row
@@ -74,13 +66,6 @@ kernel void embedding_nsgpr(
     uint token_id = inVector[row];
     if (token_id >= vocab_size) return; 
     
-    // uint input_offset = token_id * hidden_size + sg_idx * cpsg + lane;
-    // uint output_offset = row * hidden_size + sg_idx * cpsg + lane;
-    
-    // for (uint h = 0; h < cpsg && h < ; h += tpsg) {
-    //     output[output_offset + h] = table[input_offset + h];
-    // }
-
     uint input_offset = token_id * hidden_size + sg_idx * cpsg;
     uint output_offset = row * hidden_size + sg_idx * cpsg;
     for (uint h = lane; h < cpsg; h += tpsg) {

@@ -223,7 +223,7 @@ if(BUILD_TESTING)
 
   target_sources(LLMetalGemvSmoke
     PRIVATE
-      tests/gemv_smoke.cpp
+      tests/gemv_smoke.mm
       src/metal_context.mm
       src/tensor.mm
       src/gemv_naive.mm

@@ -4,8 +4,8 @@
 #include <memory>
 #include <span>
 
-#include "llmetal/gemv_shape.hpp"
 #include "llmetal/metal_job.hpp"
+#include "llmetal/tensor.hpp"
 
 namespace llmetal {
 
@@ -20,7 +20,7 @@ public:
     GemvMpsKernel(GemvMpsKernel&&) noexcept;
     GemvMpsKernel& operator=(GemvMpsKernel&&) noexcept;
 
-    void prepare(GemvShape);
+    void prepare(Shape);
     void upload_matrix(std::span<const float> matrix);
     void upload_vector(std::span<const float> vector);
     llmetal::MetalJob submit();

@@ -30,10 +30,13 @@ public:
     [[nodiscard]] void* device_handle() const;        // MTLDevice
     [[nodiscard]] void* command_queue_handle() const; // MTLCommandQueue
 
+    // For our abstraction
     template<TensorElement T>
     [[nodiscard]] GpuTensor<T> allocate(Shape shape) const;
     template<TensorElement T>
     [[nodiscard]] GpuTensor<T> upload(const CpuTensor<T>& source) const;
+    template<TensorElement T>
+    [[nodiscard]] GpuTensor<T> upload(Shape shape, const std::vector<T>& source) const;
     template<TensorElement T>
     [[nodiscard]] CpuTensor<T> download(const GpuTensor<T>& source) const;
 
@@ -64,6 +67,19 @@ template<TensorElement T>
     detail::copy_to_storage(destination.storage_, 
                             source.data(), 
                             source.byte_size(), 
+                            destination.byte_offset_);
+    return destination;
+}
+
+template<TensorElement T>
+[[nodiscard]] GpuTensor<T> MetalContext::upload(Shape shape, const std::vector<T>& source) const {
+    if (shape.numel() != source.size()) {
+        throw std::runtime_error("Mismatch between shape and source");
+    }
+    GpuTensor<T> destination = allocate<T>(shape);
+    detail::copy_to_storage(destination.storage_, 
+                            source.data(), 
+                            source.size() * sizeof(T), 
                             destination.byte_offset_);
     return destination;
 }
