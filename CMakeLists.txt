@@ -62,6 +62,7 @@ set(LLMETAL_SHADER_NAMES
   vector_add
   gemv
   embedding
+  rms_norm
 )
 
 set(LLMETAL_METALLIBS)
@@ -317,6 +318,7 @@ if(BUILD_TESTING)
     PRIVATE
       tests/rms_norm_smoke.cpp
       src/cpu/rms_norm.cpp
+      src/rms_norm.mm
       src/metal_context.mm
       src/tensor.mm
       src/metal_job.mm

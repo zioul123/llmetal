@@ -1,6 +1,8 @@
 #include <cstdint>
 #include <llmetal/tensor.hpp>
 #include "llmetal/cpu/rms_norm.hpp"
+#include "llmetal/metal_context.hpp"
+#include "llmetal/rms_norm.hpp"
 #include "llmetal/verification/equality.hpp"
 #include "llmetal/io/reader.hpp"
 
@@ -44,10 +46,23 @@ int main() {
             llmetal::Shape{batch_size, sequence_length, hidden_size}
         );
         llmetal::cpu::rms_norm(input_tensor_cpu, weights_tensor_cpu, output_tensor_cpu, epsilon);
+
+        llmetal::MetalContext context;
+        llmetal::RmsNormKernel kernel(context, 32, 1);
+        auto input_tensor_gpu = context.upload(input_tensor_cpu);
+        auto weights_tensor_gpu = context.upload(weights_tensor_cpu);
+        auto output_tensor_gpu = context.allocate<float>(
+            llmetal::Shape{batch_size, sequence_length, hidden_size}
+        );
+        auto job = kernel.submit(
+            input_tensor_gpu, weights_tensor_gpu, output_tensor_gpu, epsilon
+        );
+        job.wait();
+        auto output_tensor_gpu_cpu = context.download(output_tensor_gpu);
         
         // Verify cpu oracle.
-        bool result = verify_equal(output_tensor_cpu, expected_tensor_cpu);
-                    //   verify_equal(output_tensor_gpu_cpu, expected_tensor);
+        bool result = verify_equal(output_tensor_cpu, expected_tensor_cpu) &&
+                      verify_equal(output_tensor_gpu_cpu, expected_tensor_cpu);
 
         if (!result) {
             std::cerr << "RmsNorm test failed." << '\n';

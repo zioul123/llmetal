@@ -146,6 +146,7 @@ private:
     friend class EmbeddingKernel;
     friend class GemvNaiveKernel;
     friend class GemvNRPSGKernel;
+    friend class RmsNormKernel;
 };
 
 }

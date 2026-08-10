@@ -42,19 +42,13 @@ EmbeddingKernel::EmbeddingKernel(MetalContext& context, std::uint32_t tptg, std:
         throw std::runtime_error("tptg must be a multiple of tpr");
     }
 
-    id<MTLFunction> function = tpr == 1 ? [library newFunctionWithName:@"embedding_naive"]
-                             : tpr < impl_->pipeline_state.threadExecutionWidth 
-                                ? [library newFunctionWithName:@"embedding_tpr"]
-                                : [library newFunctionWithName:@"embedding_nsgpr"];
-
+    id<MTLFunction> function = [library newFunctionWithName:@"embedding_naive"];
     if (function == nil) throw std::runtime_error("Function not found");
 
     impl_->pipeline_state = [device newComputePipelineStateWithFunction:function error:&error];
     if (impl_->pipeline_state == nil) {
-        throw std::runtime_error(
-            std::string("Failed to create pipeline state: ") 
-            + [error.localizedDescription UTF8String]
-        );
+        throw std::runtime_error(std::string("Failed to create pipeline state: ") 
+                                 + [error.localizedDescription UTF8String]);
     }
 
     // Very dumb - just wanted the pipeline state to be created to get execution width

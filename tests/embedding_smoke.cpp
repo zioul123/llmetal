@@ -3,71 +3,11 @@
 #include <llmetal/tensor.hpp>
 #include "llmetal/embedding.hpp"
 #include "llmetal/metal_context.hpp"
+#include "llmetal/io/reader.hpp"
+#include "llmetal/verification/equality.hpp"
 
-#include <fstream>
 #include <iostream>
 #include <vector>
-
-template <typename T>
-std::vector<T> read_raw(
-    const std::filesystem::path& path,
-    std::size_t expected_elements
-) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        throw std::runtime_error("Could not open: " + path.string());
-    }
-
-    const std::streamsize byte_count = file.tellg();
-    const std::size_t expected_bytes = expected_elements * sizeof(T);
-
-    if (byte_count < 0 ||
-        static_cast<std::size_t>(byte_count) != expected_bytes) {
-        throw std::runtime_error(
-            "Unexpected file size for " + path.string() +
-            ": expected " + std::to_string(expected_bytes) +
-            " bytes, got " + std::to_string(byte_count)
-        );
-    }
-
-    file.seekg(0, std::ios::beg);
-
-    std::vector<T> values(expected_elements);
-    if (!file.read(
-            reinterpret_cast<char*>(values.data()),
-            static_cast<std::streamsize>(expected_bytes)
-        )) {
-        throw std::runtime_error("Could not read: " + path.string());
-    }
-
-    return values;
-}
-
-bool verify_equal(llmetal::CpuTensor<float>& actual, llmetal::CpuTensor<float>& expect) {
-    std::size_t expected_count = expect.span().size();
-    std::size_t actual_count = actual.span().size();
-    if (expected_count != actual_count) {
-        std::cerr << "Mismatch in tensor size: expected " << expect.shape() << ", got " << actual.shape() << '\n';
-        return false;
-    }
-
-    constexpr float tolerance = 1.0e-6f;
-    for (std::size_t index = 0; index < expected_count; ++index) {
-        if (std::fabs(expect[index] - actual[index]) > tolerance) {
-            std::cerr << "Mismatch at index " << index
-                      << ": expected " << expect[index] << '\n';
-            
-            // Print out inputs and outputs to help debugging.
-            std::cout << "actual " << actual.shape() << ":\n"; 
-            std::cout << actual << std::endl;
-    
-            std::cout << "expect "  << expect.shape() << ":\n" << std::right;
-            std::cout << expect << std::endl;
-            return false;
-        }
-    }
-    return true;
-}
 
 int main() {
     try {
