@@ -308,4 +308,50 @@ if(BUILD_TESTING)
   set_tests_properties(embedding PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
+
+  # --- LLMetalRmsNormSmoke ---
+
+  add_executable(LLMetalRmsNormSmoke)
+
+  target_sources(LLMetalRmsNormSmoke
+    PRIVATE
+      tests/rms_norm_smoke.cpp
+      src/cpu/rms_norm.cpp
+      src/metal_context.mm
+      src/tensor.mm
+      src/metal_job.mm
+  )
+
+  target_include_directories(LLMetalRmsNormSmoke
+    PRIVATE
+      include
+  )
+
+  set_target_properties(LLMetalRmsNormSmoke PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalRmsNormSmoke PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalRmsNormSmoke
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalRmsNormSmoke MetalLibs)
+
+  add_test(NAME rms_norm COMMAND LLMetalRmsNormSmoke)
+  set_tests_properties(rms_norm PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
 endif()

@@ -1,0 +1,93 @@
+{
+  "format": "llmetal-raw-fixture",
+  "format_version": 1,
+  "source": "02_rmsnorm_toy.npz",
+  "arrays": {
+    "x": {
+      "file": "x.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        2,
+        3,
+        4
+      ],
+      "element_count": 24,
+      "byte_count": 96,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "9fea347558d3c4315f0ff41d53e9ce5330483776a9cc202c9d237281116ca01a"
+    },
+    "weight": {
+      "file": "weight.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        4
+      ],
+      "element_count": 4,
+      "byte_count": 16,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "dbe2c839f4852bd22f1dda03bf584b563623bc76b88ac3da14144ac88d1dc3ad"
+    },
+    "eps": {
+      "file": "eps.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        1
+      ],
+      "element_count": 1,
+      "byte_count": 4,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "e6540c5b3269d9a6e3646dd482c2a7fe6b58e101e80007556892bb770099a68c"
+    },
+    "variance": {
+      "file": "variance.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        2,
+        3,
+        1
+      ],
+      "element_count": 6,
+      "byte_count": 24,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "94c8ddf32b05937b7b92293b826ff6a7a57c0074a1d625e423dc846a1053ff03"
+    },
+    "inv_rms": {
+      "file": "inv_rms.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        2,
+        3,
+        1
+      ],
+      "element_count": 6,
+      "byte_count": 24,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "7dc5c800e11b69db531276921c135d275327a3479a1438718bdbf20279ec5cba"
+    },
+    "expected": {
+      "file": "expected.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        2,
+        3,
+        4
+      ],
+      "element_count": 24,
+      "byte_count": 96,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "ca653aa085d69f7c421c9b2203c4a4b6aacc8d92616d66d40a43540ca1036e62"
+    }
+  }
+}
