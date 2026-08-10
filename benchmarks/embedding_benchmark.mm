@@ -447,7 +447,7 @@ int main() {
         }
         
     } catch (const std::exception& error) {
-        std::cerr << "GEMV Benchmark failed: " << error.what() << '\n';
+        std::cerr << "Embedding Benchmark failed: " << error.what() << '\n';
         return 1;
     }
 }

@@ -169,6 +169,40 @@ if(LLMETAL_BUILD_BENCHMARKS)
   )
 
   add_dependencies(LLMetalEmbeddingBenchmark MetalLibs)
+
+  # --- RmsNorm benchmark ---
+  add_executable(LLMetalRmsNormBenchmark
+    benchmarks/rms_norm_benchmark.mm
+    src/metal_context.mm
+    src/metal_job.mm
+    src/tensor.mm
+    src/rms_norm.mm
+    src/cpu/rms_norm.cpp
+  )
+
+  target_include_directories(LLMetalRmsNormBenchmark PRIVATE include)
+
+  set_target_properties(LLMetalRmsNormBenchmark PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalRmsNormBenchmark PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalRmsNormBenchmark
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalRmsNormBenchmark MetalLibs)
 endif()
 
 
