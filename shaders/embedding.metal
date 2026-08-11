@@ -45,13 +45,10 @@ kernel void embedding_nsgpr(
     constant uint& hidden_size   [[buffer(3)]],
     constant uint& vocab_size    [[buffer(4)]],
     constant uint& rptg          [[buffer(5)]],
-    constant uint& tpr           [[buffer(6)]],
-    constant uint& n_tokens      [[buffer(7)]],
-    constant uint& sgpr          [[buffer(8)]],
-    uint2 tgpg                   [[threadgroups_per_grid]],
+    constant uint& n_tokens      [[buffer(6)]],
+    constant uint& sgpr          [[buffer(7)]],
     uint2 tg_idx                 [[thread_position_in_threadgroup]],
     uint2 tg                     [[threadgroup_position_in_grid]],
-    uint2 tptg                   [[threads_per_threadgroup]],
     uint tpsg                    [[threads_per_simdgroup]],
     uint lane                    [[thread_index_in_simdgroup]]
 ) {
@@ -59,16 +56,24 @@ kernel void embedding_nsgpr(
     uint cpsg = (hidden_size + sgpr - 1) / sgpr;
     // the simd group index (per row) is thread index / simd group size
     uint sg_idx = tg_idx.x / tpsg;
+    if (sg_idx > sgpr) return; // Shouldn't happen
 
+    // Compute output row offset
     uint row = tg.y * rptg + tg_idx.y;
     if (row >= n_tokens) return;
+    uint output_row_idx = row * hidden_size;
     
+    // Compute table row offset
     uint token_id = inVector[row];
     if (token_id >= vocab_size) return; 
+    uint table_row_idx = token_id * hidden_size;
     
-    uint input_offset = token_id * hidden_size + sg_idx * cpsg;
-    uint output_offset = row * hidden_size + sg_idx * cpsg;
-    for (uint h = lane; h < cpsg; h += tpsg) {
-        output[output_offset + h] = table[input_offset + h];
+    // Compute simd group column bounds
+    uint sg_start = sg_idx * cpsg;
+    uint sg_end = min(sg_start + cpsg, hidden_size);
+
+    // Actual computation
+    for (uint h = sg_start + lane; h < sg_end; h += tpsg) {
+        output[output_row_idx + h] = table[table_row_idx + h];
     }
 }

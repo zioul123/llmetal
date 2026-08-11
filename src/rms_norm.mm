@@ -128,33 +128,35 @@ MetalJob RmsNormKernel::submit_repeated(
         NSUInteger upperBound = impl_->tptg;
         upperBound = (upperBound > gridSize.width) ? gridSize.width : upperBound;
         MTLSize threadGroupSize = MTLSizeMake(upperBound, 1, 1);
-
         for (std::size_t i = 0; i < repeats; ++i) {
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         }
-
-        [computeEncoder endEncoding];
-        [commandBuffer commit];
-        impl_->lastCommandBuffer = commandBuffer;
-        return llmetal::MetalJob((__bridge void*) commandBuffer);
-    } else if (impl_->tpr != impl_->pipeline_state.threadExecutionWidth) {
-        // some threads per row
-        throw std::runtime_error("Not implemented");
-    } else {
+    } else if (impl_->tpr == impl_->pipeline_state.threadExecutionWidth) {
         // 1 SIMD group per row, rptg rows per threadgroup
         NSUInteger rptg = impl_->tptg / impl_->tpr;
         MTLSize gridSize = MTLSizeMake(impl_->tpr, n_input, 1);
         MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, rptg, 1);
-
         for (std::size_t i = 0; i < repeats; ++i) {
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         }
-
-        [computeEncoder endEncoding];
-        [commandBuffer commit];
-        impl_->lastCommandBuffer = commandBuffer;
-        return llmetal::MetalJob((__bridge void*) commandBuffer);
+    } else if (impl_->tpr > impl_->pipeline_state.threadExecutionWidth) {
+        // N SIMD group per row, 1 row per threadgroup
+        NSUInteger sgptg = impl_->tpr / impl_->pipeline_state.threadExecutionWidth;
+        MTLSize gridSize = MTLSizeMake(impl_->tpr, n_input, 1);
+        MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, 1, 1);
+        [computeEncoder setBytes:&sgptg length:sizeof(uint) atIndex:5];
+        for (std::size_t i = 0; i < repeats; ++i) {
+            [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+        }
+    } else {
+        // We don't support <32 per row, nor multiple simd groups and rows per threadgroup,
+        // only allow eitehr multi simd per row or multi row per threadgroup with 1 simd group per row.
+        throw std::runtime_error("Not implemented - tpr should be a multiple of the thread execution width");
     }
+    [computeEncoder endEncoding];
+    [commandBuffer commit];
+    impl_->lastCommandBuffer = commandBuffer;
+    return llmetal::MetalJob((__bridge void*) commandBuffer);
 }
 
 MetalJob RmsNormKernel::submit(

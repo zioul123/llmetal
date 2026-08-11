@@ -155,9 +155,8 @@ MetalJob EmbeddingKernel::submit_repeated(
         // SIMD groups per row
         NSUInteger sgpr = impl_->tpr / impl_->pipeline_state.threadExecutionWidth;
         [computeEncoder setBytes:&rptg               length:sizeof(uint) atIndex:5];
-        [computeEncoder setBytes:&impl_->tpr         length:sizeof(uint) atIndex:6];
-        [computeEncoder setBytes:&n_input_tokens_u32 length:sizeof(uint) atIndex:7];
-        [computeEncoder setBytes:&sgpr               length:sizeof(uint) atIndex:8];
+        [computeEncoder setBytes:&n_input_tokens_u32 length:sizeof(uint) atIndex:6];
+        [computeEncoder setBytes:&sgpr               length:sizeof(uint) atIndex:7];
 
         // Number of thread groups is ceil_div(rows, rows per threadgroup)
         MTLSize gridSize = MTLSizeMake(1 , (n_input_tokens + rptg - 1) / rptg, 1);

@@ -301,11 +301,17 @@ int main() {
             KernelAndBackend{ llmetal::RmsNormKernel(context, 256, 32), "tg256_tpr32" },
             KernelAndBackend{ llmetal::RmsNormKernel(context, 512, 32), "tg512_tpr32" },
             KernelAndBackend{ llmetal::RmsNormKernel(context, 1024, 32), "tg1024_tpr32" },
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 64, 64), "tg64_tpr64" },
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 128, 128), "tg128_tpr128" },
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 256, 256), "tg256_tpr256" },
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 512, 512), "tg512_tpr512" }, // Best
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 1024, 1024), "tg1024_tpr1024" },
         };
         constexpr std::size_t NUM_KERNELS = sizeof(kernels) / sizeof(KernelAndBackend);
 
         BenchmarkConfig details[] = {
-            BenchmarkConfig{ "SmolLM2-1000x576", {30, 1000, 576}, {576} }
+            BenchmarkConfig{ "SmolLM2-30Kx576", {30, 1000, 576}, {576} },
+            BenchmarkConfig{ "Qwen3.6-3Kx5120", {3, 1000, 5120}, {5120} }
         };
 
         for (BenchmarkConfig const &config : details) {
