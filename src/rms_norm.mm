@@ -50,6 +50,30 @@ RmsNormKernel::RmsNormKernel(MetalContext& context, std::uint32_t tptg, std::uin
         throw std::runtime_error(std::string("Failed to create pipeline state: ") 
                                  + [error.localizedDescription UTF8String]);
     }
+
+    // Very dumb - just wanted the pipeline state to be created to get execution width
+    if (tpr != 1) {
+        // Validate that tpr, if more than the size of a simd group, is a multiple. 
+        // TODO: Unfortunately, this must be done after we created the pipeline state, so it's in a weird place.
+        if (tpr >= impl_->pipeline_state.threadExecutionWidth && 
+            tpr % impl_->pipeline_state.threadExecutionWidth != 0
+        ) {
+            throw std::runtime_error("tpr must be less than or a multiple of the thread execution width (SIMD Group size)");
+        }
+        function = tpr == impl_->pipeline_state.threadExecutionWidth 
+                 ? [library newFunctionWithName:@"rms_norm_1sgpr"]
+                 : [library newFunctionWithName:@"rms_norm_nsgpr"];
+
+        if (function == nil) throw std::runtime_error("Function not found");
+
+        impl_->pipeline_state = [device newComputePipelineStateWithFunction:function error:&error];
+        if (impl_->pipeline_state == nil) {
+            throw std::runtime_error(
+                std::string("Failed to create pipeline state: ") 
+                + [error.localizedDescription UTF8String]
+            );
+        }
+    }
 }
     
 RmsNormKernel::~RmsNormKernel() = default;
@@ -113,10 +137,23 @@ MetalJob RmsNormKernel::submit_repeated(
         [commandBuffer commit];
         impl_->lastCommandBuffer = commandBuffer;
         return llmetal::MetalJob((__bridge void*) commandBuffer);
-    } else if (impl_->tpr < impl_->pipeline_state.threadExecutionWidth) {
+    } else if (impl_->tpr != impl_->pipeline_state.threadExecutionWidth) {
+        // some threads per row
         throw std::runtime_error("Not implemented");
     } else {
-        throw std::runtime_error("Not implemented");
+        // 1 SIMD group per row, rptg rows per threadgroup
+        NSUInteger rptg = impl_->tptg / impl_->tpr;
+        MTLSize gridSize = MTLSizeMake(impl_->tpr, n_input, 1);
+        MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, rptg, 1);
+
+        for (std::size_t i = 0; i < repeats; ++i) {
+            [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+        }
+
+        [computeEncoder endEncoding];
+        [commandBuffer commit];
+        impl_->lastCommandBuffer = commandBuffer;
+        return llmetal::MetalJob((__bridge void*) commandBuffer);
     }
 }
 

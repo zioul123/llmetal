@@ -285,13 +285,27 @@ ValidationResult run(
 
 } // namespace Validate
 
+struct KernelAndBackend {
+    llmetal::RmsNormKernel kernel;
+    std::string_view backend;
+};
+
 int main() {
     try {
         llmetal::MetalContext context;
-        llmetal::RmsNormKernel kernel_tg32_tpr1(context, 32, 1);
-        
+        KernelAndBackend kernels[] = {
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 32, 1), "tg32_tpr1" },
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 32, 32), "tg32_tpr32" },
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 64, 32), "tg64_tpr32" },
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 128, 32), "tg128_tpr32" },
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 256, 32), "tg256_tpr32" },
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 512, 32), "tg512_tpr32" },
+            KernelAndBackend{ llmetal::RmsNormKernel(context, 1024, 32), "tg1024_tpr32" },
+        };
+        constexpr std::size_t NUM_KERNELS = sizeof(kernels) / sizeof(KernelAndBackend);
+
         BenchmarkConfig details[] = {
-            BenchmarkConfig{ "SmolLM2-1000x576", {10, 1000, 576}, {576} }
+            BenchmarkConfig{ "SmolLM2-1000x576", {30, 1000, 576}, {576} }
         };
 
         for (BenchmarkConfig const &config : details) {
@@ -346,9 +360,14 @@ int main() {
 
             // === Validation pass ===
             // Validate the implementations
-            ValidationResult validationResults[] = {
-                Validate::run(context, kernel_tg32_tpr1, fixture, "tg32_tpr1"),
-            };
+            std::vector<ValidationResult> validationResults;
+            for (std::size_t i = 0; i < NUM_KERNELS; ++i) {
+                validationResults.push_back(
+                    Validate::run(
+                        context, kernels[i].kernel, fixture, kernels[i].backend
+                    )
+                );
+            }
             
             // Print validation results
             std::cout << "Validation:\n";
@@ -366,11 +385,18 @@ int main() {
                 std::cout << "  Validation passed." << std::endl;
             }
 
+
             // === Benchmark pass ===
-            BenchmarkResult benchmarkResults[] = {
-                Benchmark::run(context, kernel_tg32_tpr1, config_with_data, "tg32_tpr1"),
-            };
-            // Table header
+            std::vector<BenchmarkResult> benchmarkResults;
+            for (std::size_t i = 0; i < NUM_KERNELS; ++i) {
+                benchmarkResults.push_back(
+                    Benchmark::run(
+                        context, kernels[i].kernel, config_with_data, kernels[i].backend
+                    )
+                );
+            }
+
+            // Print benchmark results
             benchmarkResults[0].printHeader();
             for (auto const &result : benchmarkResults) {
                 result.printRow();
