@@ -1,7 +1,7 @@
 #include <cstdint>
 #include <llmetal/tensor.hpp>
-#include "llmetal/cpu/rms_norm.hpp"
 #include "llmetal/metal_context.hpp"
+#include "llmetal/cpu/rms_norm.hpp"
 #include "llmetal/rms_norm.hpp"
 #include "llmetal/verification/equality.hpp"
 #include "llmetal/io/reader.hpp"

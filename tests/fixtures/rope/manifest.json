@@ -1,0 +1,67 @@
+{
+  "format": "llmetal-raw-fixture",
+  "format_version": 1,
+  "source": "04_rope_packed_toy.npz",
+  "arrays": {
+    "x": {
+      "file": "x.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        1,
+        3,
+        2,
+        4
+      ],
+      "element_count": 24,
+      "byte_count": 96,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "672b7c75ef5dbeae1e590058ff528914b494ce4de4027b70e1f964a38c8bc0a9"
+    },
+    "cos": {
+      "file": "cos.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        3,
+        4
+      ],
+      "element_count": 12,
+      "byte_count": 48,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "13394982c257daaacdb3e61a45d087b09e7208de621302e18d4a92d31bf1082c"
+    },
+    "sin": {
+      "file": "sin.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        3,
+        4
+      ],
+      "element_count": 12,
+      "byte_count": 48,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "9693ced2542ab4229b484be1a10e1a6de2f39306e4769534cee7b2e6c16b99bc"
+    },
+    "expected": {
+      "file": "expected.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        1,
+        3,
+        2,
+        4
+      ],
+      "element_count": 24,
+      "byte_count": 96,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "7731c2fc3141299b3c01509794f9b4ba57862a047e8f13ecf860a6ac36838a0b"
+    }
+  }
+}

@@ -1,6 +1,6 @@
 #include <cstddef>
 
-#include "llmetal/tensor.hpp"
+#include "llmetal/cpu/rms_norm.hpp"
 
 namespace llmetal::cpu {
 
