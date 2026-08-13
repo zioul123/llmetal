@@ -397,9 +397,8 @@ if(BUILD_TESTING)
 
   target_sources(LLMetalRoPESmoke
     PRIVATE
-      tests/rms_norm_smoke.cpp
-      src/cpu/rms_norm.cpp
-      src/rms_norm.mm
+      tests/rope_smoke.cpp
+      src/cpu/rope.cpp
       src/metal_context.mm
       src/tensor.mm
       src/metal_job.mm

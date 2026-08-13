@@ -19,26 +19,26 @@ int main() {
         // sin   (sequence, dim per head): [3, 4]
         // expected: [1, 3, 2, 4]
 
-        constexpr std::size_t batch_size      = 1;
-        constexpr std::size_t sequence_length = 3;
-        constexpr std::size_t num_heads       = 2;
-        constexpr std::size_t dim_per_head    = 4;
+        constexpr std::size_t batch_size = 1;
+        constexpr std::size_t seq_length = 3;
+        constexpr std::size_t num_heads  = 2;
+        constexpr std::size_t head_dim   = 4;
         constexpr float theta = 100000.0f;
 
         std::uint32_t rope_count = checked_u32(
-            checked_multiply(sequence_length, dim_per_head),
+            checked_multiply(seq_length, head_dim),
             "rope_count"
         );
         std::uint32_t expected_count = checked_u32(
             checked_multiply(
-                checked_multiply(batch_size, sequence_length),
-                checked_multiply(num_heads, dim_per_head)
+                checked_multiply(batch_size, seq_length),
+                checked_multiply(num_heads, head_dim)
             ),
             "expected_count"
         );
 
-        llmetal::Shape inputShape{ batch_size, sequence_length, num_heads, dim_per_head };
-        llmetal::Shape rope_fixture_shape{ sequence_length, dim_per_head };
+        llmetal::Shape inputShape{ batch_size, seq_length, num_heads, head_dim };
+        llmetal::Shape rope_fixture_shape{ seq_length, head_dim };
 
         // Get fixtures
         llmetal::CpuTensor<float> input_tensor_cpu(
@@ -58,29 +58,35 @@ int main() {
             read_raw<float>(fixture_directory / "expected.f32", expected_count)
         );
 
-        // Verify cpu oracle
-        // llmetal::CpuTensor<float> output_tensor_cpu(
-        //     llmetal::Shape{ batch_size, sequence_length, num_heads, dim_per_head }
-        // );
-        llmetal::Shape rope_packed_shape{ sequence_length, dim_per_head / 2, 2 };
-
-        llmetal::CpuTensor<float> rope_output_tensor_cpu(
-            llmetal::Shape{ sequence_length, dim_per_head / 2, 2 }
+        // Verify cpu oracle - cos and sin precomputation generation
+        llmetal::Shape rope_packed_shape{ seq_length, head_dim / 2, 2 };
+        
+        llmetal::CpuTensor<float> rope_cos_and_sin_cpu(
+            llmetal::Shape{ seq_length, head_dim / 2, 2 }
         );
-        llmetal::cpu::rope_cos_and_sin(sequence_length, dim_per_head, theta, rope_output_tensor_cpu);
-
+        llmetal::cpu::rope_cos_and_sin(seq_length, head_dim, theta, rope_cos_and_sin_cpu);
+        
         // Repack for comparison
         llmetal::CpuTensor<float> rope_cos(rope_fixture_shape);
         llmetal::CpuTensor<float> rope_sin(rope_fixture_shape);
-        for (std::uint32_t seq_idx = 0; seq_idx < sequence_length; ++seq_idx) {
-            for (std::uint32_t d = 0; d < dim_per_head; ++d) { 
-                rope_cos[seq_idx * dim_per_head + d] 
-                    = rope_output_tensor_cpu[seq_idx * dim_per_head + (d * 2 % (dim_per_head / 2))];
-                rope_sin[seq_idx * dim_per_head + d] 
-                    = rope_output_tensor_cpu[seq_idx * dim_per_head + (1 + d * 2 % (dim_per_head / 2))];
+        std::uint32_t pair_count = head_dim / 2;
+        for (std::uint32_t seq_idx = 0; seq_idx < seq_length; ++seq_idx) {
+            for (std::uint32_t d = 0; d < head_dim; ++d) { 
+                std::uint32_t pair_idx = d % pair_count;
+                std::uint32_t cos_and_sin_idx = seq_idx * pair_count * 2 + pair_idx * 2;
+                rope_cos[seq_idx * head_dim + d] 
+                    = rope_cos_and_sin_cpu[cos_and_sin_idx];
+                rope_sin[seq_idx * head_dim + d] 
+                    = rope_cos_and_sin_cpu[cos_and_sin_idx + 1];
             }
         }
 
+        // Verify cpu oracle - rope application
+        llmetal::CpuTensor<float> output_tensor_cpu(
+            llmetal::Shape{ batch_size, seq_length, num_heads, head_dim }
+        );
+        llmetal::cpu::rotate_half(input_tensor_cpu, output_tensor_cpu, rope_cos_and_sin_cpu, head_dim);
+        llmetal::cpu::rotate_half_in_place(input_tensor_cpu, rope_cos_and_sin_cpu, head_dim);
 
         // llmetal::MetalContext context;
         // llmetal::RmsNormKernel kernel(context, 32, 1);
@@ -96,7 +102,9 @@ int main() {
         // auto output_tensor_gpu_cpu = context.download(output_tensor_gpu);
         
         // Verify cpu oracle.
-        bool result = verify_equal(rope_cos, cos) && verify_equal(rope_sin, sin);
+        bool result = verify_equal(rope_cos, cos) && verify_equal(rope_sin, sin) &&
+                      verify_equal(output_tensor_cpu, expected_tensor_cpu) &&
+                      verify_equal(input_tensor_cpu, expected_tensor_cpu);
         // bool result = verify_equal(output_tensor_cpu, expected_tensor_cpu); // &&
                     //   verify_equal(output_tensor_gpu_cpu, expected_tensor_cpu);
 

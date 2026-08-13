@@ -11,4 +11,17 @@ void rope_cos_and_sin(
     llmetal::CpuTensor<float>& output // [max_seq_length, rotary_dim / 2, 2 (cos_and_sin)]
 );
 
+void rotate_half(
+    const llmetal::CpuTensor<float>& input,       // [batch, seq_length, num_heads, head_dim]
+    llmetal::CpuTensor<float>& output,            // [batch, seq_length, num_heads, head_dim]
+    const llmetal::CpuTensor<float>& cos_and_sin, // [max_seq_length, rotary_dim / 2, 2 (cos_and_sin)]
+    const std::uint32_t rotary_dim
+);
+
+void rotate_half_in_place(
+    llmetal::CpuTensor<float>& input,       // [batch, seq_length, num_heads, head_dim]
+    const llmetal::CpuTensor<float>& cos_and_sin, // [max_seq_length, rotary_dim / 2, 2 (cos_and_sin)]
+    const std::uint32_t rotary_dim
+);
+
 } // namespace llmetal::cpu
