@@ -67,7 +67,7 @@ void rotate_half(
 
     if (R == 0) throw std::invalid_argument("rotary_dim must be positive");
     if (R > input.shape()[3]) throw std::invalid_argument("rotary_dim must be <= head_dim");
-    if (cos_and_sin.shape()[0] != input.shape()[1]) throw std::invalid_argument("cos_and_sin max_seq_length must be longer than sequence length");
+    if (cos_and_sin.shape()[0] < S) throw std::invalid_argument("cos_and_sin max_seq_length must be longer than sequence length");
 
     for (std::size_t batch = 0; batch < B; ++batch) {
         for (std::size_t seq = 0; seq < S; ++seq) {

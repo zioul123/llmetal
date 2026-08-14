@@ -204,6 +204,40 @@ if(LLMETAL_BUILD_BENCHMARKS)
   )
 
   add_dependencies(LLMetalRmsNormBenchmark MetalLibs)
+
+  # --- RoPE benchmark ---
+  add_executable(LLMetalRoPEBenchmark
+    benchmarks/rope_benchmark.mm
+    src/metal_context.mm
+    src/metal_job.mm
+    src/tensor.mm
+    src/rope.mm
+    src/cpu/rope.cpp
+  )
+
+  target_include_directories(LLMetalRoPEBenchmark PRIVATE include)
+
+  set_target_properties(LLMetalRoPEBenchmark PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalRoPEBenchmark PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalRoPEBenchmark
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalRoPEBenchmark MetalLibs)
 endif()
 
 

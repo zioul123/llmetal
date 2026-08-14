@@ -51,29 +51,29 @@ RoPEKernel::RoPEKernel(MetalContext& context, std::uint32_t tptg, std::uint32_t 
                                  + [error.localizedDescription UTF8String]);
     }
 
-    // // Very dumb - just wanted the pipeline state to be created to get execution width
-    // if (tpr != 1) {
-    //     // Validate that tpr, if more than the size of a simd group, is a multiple. 
-    //     // TODO: Unfortunately, this must be done after we created the pipeline state, so it's in a weird place.
-    //     if (tpr >= impl_->pipeline_state.threadExecutionWidth && 
-    //         tpr % impl_->pipeline_state.threadExecutionWidth != 0
-    //     ) {
-    //         throw std::runtime_error("tpr must be less than or a multiple of the thread execution width (SIMD Group size)");
-    //     }
-    //     function = tpr == impl_->pipeline_state.threadExecutionWidth 
-    //              ? [library newFunctionWithName:@"rope_1sgpr"]
-    //              : [library newFunctionWithName:@"rope_nsgpr"];
+    // Very dumb - just wanted the pipeline state to be created to get execution width
+    if (tpr != 1) {
+        // Validate that tpr, if more than the size of a simd group, is a multiple. 
+        // TODO: Unfortunately, this must be done after we created the pipeline state, so it's in a weird place.
+        if (tpr >= impl_->pipeline_state.threadExecutionWidth && 
+            tpr % impl_->pipeline_state.threadExecutionWidth != 0
+        ) {
+            throw std::runtime_error("tpr must be less than or a multiple of the thread execution width (SIMD Group size)");
+        }
+        function = tpr == impl_->pipeline_state.threadExecutionWidth 
+                 ? [library newFunctionWithName:@"rope_1sgpr"]
+                 : [library newFunctionWithName:@"rope_nsgpr"];
 
-    //     if (function == nil) throw std::runtime_error("Function not found");
+        if (function == nil) throw std::runtime_error("Function not found");
 
-    //     impl_->pipeline_state = [device newComputePipelineStateWithFunction:function error:&error];
-    //     if (impl_->pipeline_state == nil) {
-    //         throw std::runtime_error(
-    //             std::string("Failed to create pipeline state: ") 
-    //             + [error.localizedDescription UTF8String]
-    //         );
-    //     }
-    // }
+        impl_->pipeline_state = [device newComputePipelineStateWithFunction:function error:&error];
+        if (impl_->pipeline_state == nil) {
+            throw std::runtime_error(
+                std::string("Failed to create pipeline state: ") 
+                + [error.localizedDescription UTF8String]
+            );
+        }
+    }
 }
     
 RoPEKernel::~RoPEKernel() = default;
@@ -116,7 +116,7 @@ MetalJob RoPEKernel::submit_repeated(
 
     if (R == 0) throw std::invalid_argument("rotary_dim must be positive");
     if (R > D) throw std::invalid_argument("rotary_dim must be <= head_dim");
-    if (cos_and_sin.shape()[0] != input.shape()[1]) throw std::invalid_argument("cos_and_sin max_seq_length must be longer than sequence length");
+    if (cos_and_sin.shape()[0] < S) throw std::invalid_argument("cos_and_sin max_seq_length must be longer than sequence length");
 
     id<MTLCommandQueue> commandQueue = (__bridge id<MTLCommandQueue>)impl_->metalContext.command_queue_handle();
 
@@ -131,7 +131,7 @@ MetalJob RoPEKernel::submit_repeated(
     [computeEncoder setBuffer:(__bridge id<MTLBuffer>)input.buffer_handle()       offset:input.byte_offset_       atIndex:0];
     [computeEncoder setBuffer:(__bridge id<MTLBuffer>)cos_and_sin.buffer_handle() offset:cos_and_sin.byte_offset_ atIndex:1];
     [computeEncoder setBuffer:(__bridge id<MTLBuffer>)output.buffer_handle()      offset:output.byte_offset_      atIndex:2];
-    [computeEncoder setBytes:&B length:sizeof(uint) atIndex:3];
+    [computeEncoder setBytes:&S length:sizeof(uint) atIndex:3];
     [computeEncoder setBytes:&H length:sizeof(uint) atIndex:4];
     [computeEncoder setBytes:&D length:sizeof(uint) atIndex:5];
     [computeEncoder setBytes:&P length:sizeof(uint) atIndex:6];
@@ -147,24 +147,25 @@ MetalJob RoPEKernel::submit_repeated(
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         }
     } 
-    // else if (impl_->tpr == impl_->pipeline_state.threadExecutionWidth) {
-    //     // 1 SIMD group per row, rptg rows per threadgroup
-    //     NSUInteger rptg = impl_->tptg / impl_->tpr;
-    //     MTLSize gridSize = MTLSizeMake(impl_->tpr, n_input, 1);
-    //     MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, rptg, 1);
-    //     for (std::size_t i = 0; i < repeats; ++i) {
-    //         [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
-    //     }
-    // } else if (impl_->tpr > impl_->pipeline_state.threadExecutionWidth) {
-    //     // N SIMD group per row, 1 row per threadgroup
-    //     NSUInteger sgptg = impl_->tpr / impl_->pipeline_state.threadExecutionWidth;
-    //     MTLSize gridSize = MTLSizeMake(impl_->tpr, n_input, 1);
-    //     MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, 1, 1);
-    //     [computeEncoder setBytes:&sgptg length:sizeof(uint) atIndex:5];
-    //     for (std::size_t i = 0; i < repeats; ++i) {
-    //         [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
-    //     }
-    // }
+    else if (impl_->tpr == impl_->pipeline_state.threadExecutionWidth) {
+        // 1 SIMD group per row, rptg rows per threadgroup
+        NSUInteger rptg = impl_->tptg / impl_->tpr;
+        MTLSize gridSize = MTLSizeMake(impl_->tpr, n_input, 1);
+        MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, rptg, 1);
+        for (std::size_t i = 0; i < repeats; ++i) {
+            [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+        }
+    } 
+    else if (impl_->tpr > impl_->pipeline_state.threadExecutionWidth) {
+        // N SIMD group per row, 1 row per threadgroup
+        NSUInteger sgptg = impl_->tpr / impl_->pipeline_state.threadExecutionWidth;
+        MTLSize gridSize = MTLSizeMake(impl_->tpr, n_input, 1);
+        MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, 1, 1);
+        [computeEncoder setBytes:&sgptg length:sizeof(uint) atIndex:8];
+        for (std::size_t i = 0; i < repeats; ++i) {
+            [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+        }
+    }
     else {
         // We don't support <32 per row, nor multiple simd groups and rows per threadgroup,
         // only allow eitehr multi simd per row or multi row per threadgroup with 1 simd group per row.
