@@ -2,6 +2,7 @@
 #include <llmetal/tensor.hpp>
 #include "llmetal/cpu/rope.hpp"
 #include "llmetal/metal_context.hpp"
+#include "llmetal/rope.hpp"
 #include "llmetal/verification/equality.hpp"
 #include "llmetal/io/reader.hpp"
 
@@ -85,31 +86,41 @@ int main() {
         llmetal::CpuTensor<float> output_tensor_cpu(
             llmetal::Shape{ batch_size, seq_length, num_heads, head_dim }
         );
-        llmetal::cpu::rotate_half(input_tensor_cpu, output_tensor_cpu, rope_cos_and_sin_cpu, head_dim);
-        llmetal::cpu::rotate_half_in_place(input_tensor_cpu, rope_cos_and_sin_cpu, head_dim);
+        llmetal::cpu::rotate_half(input_tensor_cpu, output_tensor_cpu, rope_cos_and_sin_cpu);
 
-        // llmetal::MetalContext context;
-        // llmetal::RmsNormKernel kernel(context, 32, 1);
-        // auto input_tensor_gpu = context.upload(input_tensor_cpu);
-        // auto weights_tensor_gpu = context.upload(weights_tensor_cpu);
-        // auto output_tensor_gpu = context.allocate<float>(
-        //     llmetal::Shape{batch_size, sequence_length, hidden_size}
-        // );
-        // auto job = kernel.submit(
-        //     input_tensor_gpu, weights_tensor_gpu, output_tensor_gpu, epsilon
-        // );
-        // job.wait();
-        // auto output_tensor_gpu_cpu = context.download(output_tensor_gpu);
+        // Verify metal
+        llmetal::MetalContext context;
+        llmetal::RoPEKernel kernel(context, 32, 1);
+        auto input_tensor_gpu = context.upload(input_tensor_cpu);
+        auto cos_and_sin_gpu = context.upload(rope_cos_and_sin_cpu);
+        auto output_tensor_gpu = context.allocate<float>(inputShape);
+        auto job = kernel.submit(
+            input_tensor_gpu, output_tensor_gpu, cos_and_sin_gpu
+        );
+        job.wait();
+        auto output_tensor_gpu_cpu = context.download(output_tensor_gpu);
         
         // Verify cpu oracle.
         bool result = verify_equal(rope_cos, cos) && verify_equal(rope_sin, sin) &&
                       verify_equal(output_tensor_cpu, expected_tensor_cpu) &&
-                      verify_equal(input_tensor_cpu, expected_tensor_cpu);
-        // bool result = verify_equal(output_tensor_cpu, expected_tensor_cpu); // &&
-                    //   verify_equal(output_tensor_gpu_cpu, expected_tensor_cpu);
-
+                      verify_equal(output_tensor_gpu_cpu, expected_tensor_cpu);
+        
         if (!result) {
             std::cerr << "Rope test failed." << '\n';
+            return 1;
+        }
+
+        llmetal::cpu::rotate_half_in_place(input_tensor_cpu, rope_cos_and_sin_cpu);
+        job = kernel.submit(
+            input_tensor_gpu, input_tensor_gpu, cos_and_sin_gpu
+        );
+        job.wait();
+        auto output_tensor_gpu_cpu_in_place = context.download(input_tensor_gpu);
+
+        result = verify_equal(input_tensor_cpu, expected_tensor_cpu) &&
+                verify_equal(output_tensor_gpu_cpu_in_place, expected_tensor_cpu);
+        if (!result) {
+            std::cerr << "Rope in-place test failed." << '\n';
             return 1;
         }
 

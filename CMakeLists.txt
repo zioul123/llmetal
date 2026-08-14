@@ -63,6 +63,7 @@ set(LLMETAL_SHADER_NAMES
   gemv
   embedding
   rms_norm
+  rope
 )
 
 set(LLMETAL_METALLIBS)
@@ -399,6 +400,7 @@ if(BUILD_TESTING)
     PRIVATE
       tests/rope_smoke.cpp
       src/cpu/rope.cpp
+      src/rope.mm
       src/metal_context.mm
       src/tensor.mm
       src/metal_job.mm

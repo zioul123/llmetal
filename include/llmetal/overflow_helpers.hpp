@@ -17,6 +17,18 @@
     return lhs * rhs;
 }
 
+[[nodiscard]] constexpr std::uint32_t checked_multiply_u32(
+    std::uint32_t lhs,
+    std::uint32_t rhs
+) {
+    if (rhs != 0 &&
+        lhs > std::numeric_limits<std::uint32_t>::max() / rhs) {
+        throw std::overflow_error("Shape element count overflow");
+    }
+
+    return lhs * rhs;
+}
+
 [[nodiscard]] inline std::uint32_t checked_u32(
     std::size_t value,
     std::string_view name

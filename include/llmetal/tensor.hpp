@@ -147,6 +147,7 @@ private:
     friend class GemvNaiveKernel;
     friend class GemvNRPSGKernel;
     friend class RmsNormKernel;
+    friend class RoPEKernel;
 };
 
 }

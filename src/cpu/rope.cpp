@@ -40,10 +40,9 @@ void rope_cos_and_sin(
 }
 
 void rotate_half(
-    const llmetal::CpuTensor<float>& input,       // [batch, seq_length, num_heads, head_dim]
-    llmetal::CpuTensor<float>& output,            // [batch, seq_length, num_heads, head_dim]
-    const llmetal::CpuTensor<float>& cos_and_sin, // [max_seq_length, rotary_dim / 2, 2 (cos_and_sin)]
-    const std::uint32_t rotary_dim
+    const llmetal::CpuTensor<float>& input,      // [batch, seq_length, num_heads, head_dim]
+    llmetal::CpuTensor<float>& output,           // [batch, seq_length, num_heads, head_dim]
+    const llmetal::CpuTensor<float>& cos_and_sin // [max_seq_length, rotary_dim / 2, 2 (cos_and_sin)]
 ) {
     if (input.shape().rank() != 4 || 
         output.shape().rank() != 4 || 
@@ -54,18 +53,21 @@ void rotate_half(
     ) {
         throw std::invalid_argument("input and output must be 4D tensors of the same shape");
     }
-    if (cos_and_sin.shape().rank() != 3 || cos_and_sin.shape()[1] != rotary_dim / 2 || cos_and_sin.shape()[2] != 2) {
+
+    if (cos_and_sin.shape().rank() != 3 || cos_and_sin.shape()[2] != 2) {
         throw std::invalid_argument("cos_and_sin must be a 3D tensor of shape [max_seq_length, rotary_dim / 2, 2]");
     }
-    if (rotary_dim == 0 || rotary_dim % 2 != 0) throw std::invalid_argument("rotary_dim must be positive and even");
-    if (rotary_dim > input.shape()[3]) throw std::invalid_argument("rotary_dim must be <= head_dim");
-    if (cos_and_sin.shape()[0] != input.shape()[1]) throw std::invalid_argument("cos_and_sin max_seq_length must be longer than sequence length");
 
     const std::uint32_t B = input.shape()[0]; // Batch size
     const std::uint32_t S = input.shape()[1]; // Sequence length
     const std::uint32_t H = input.shape()[2]; // Number of heads
     const std::uint32_t D = input.shape()[3]; // Head dimension
-    const std::uint32_t P = rotary_dim / 2;   // Pair count
+    const std::uint32_t P = cos_and_sin.shape()[1]; // Num rotary pairs
+    const std::uint32_t R = P * 2; // Rotary dim
+
+    if (R == 0) throw std::invalid_argument("rotary_dim must be positive");
+    if (R > input.shape()[3]) throw std::invalid_argument("rotary_dim must be <= head_dim");
+    if (cos_and_sin.shape()[0] != input.shape()[1]) throw std::invalid_argument("cos_and_sin max_seq_length must be longer than sequence length");
 
     for (std::size_t batch = 0; batch < B; ++batch) {
         for (std::size_t seq = 0; seq < S; ++seq) {
@@ -84,7 +86,7 @@ void rotate_half(
                     output[index + P] = pair_right_output;
                 }
                 // Rotary dim may be less than head_dim, so copy over the rest
-                for (std::size_t d = rotary_dim; d < D; ++d) { 
+                for (std::size_t d = R; d < D; ++d) { 
                     std::size_t index =  ((batch * S + seq) * H + head) * D + d;
                     output[index] = input[index];
                 }
@@ -95,10 +97,9 @@ void rotate_half(
 
 void rotate_half_in_place(
     llmetal::CpuTensor<float>& input,       // [batch, seq_length, num_heads, head_dim]
-    const llmetal::CpuTensor<float>& cos_and_sin, // [max_seq_length, rotary_dim / 2, 2 (cos_and_sin)]
-    const std::uint32_t rotary_dim
+    const llmetal::CpuTensor<float>& cos_and_sin // [max_seq_length, rotary_dim / 2, 2 (cos_and_sin)]
 ) {
-    rotate_half(input, input, cos_and_sin, rotary_dim);    
+    rotate_half(input, input, cos_and_sin);    
 }
 
 } // namespace llmetal::cpu
