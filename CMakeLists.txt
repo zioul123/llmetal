@@ -61,6 +61,7 @@ find_program(XCRUN xcrun REQUIRED)
 set(LLMETAL_SHADER_NAMES
   vector_add
   gemv
+  linear
   embedding
   rms_norm
   rope
@@ -481,6 +482,7 @@ if(BUILD_TESTING)
     PRIVATE
       tests/linear_smoke.cpp
       src/cpu/linear.cpp
+      src/linear.mm
       src/metal_context.mm
       src/tensor.mm
       src/metal_job.mm

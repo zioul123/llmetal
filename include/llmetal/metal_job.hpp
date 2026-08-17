@@ -25,6 +25,7 @@ private:
     friend class GemvNaiveKernel;
     friend class GemvMpsKernel;
     friend class GemvNRPSGKernel;
+    friend class LinearKernel;
     friend class EmbeddingKernel;
     friend class RmsNormKernel;
     friend class RoPEKernel;
