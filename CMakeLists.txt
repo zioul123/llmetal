@@ -472,4 +472,50 @@ if(BUILD_TESTING)
   set_tests_properties(rope PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
+
+  # --- LLMetalLinearSmoke ---
+
+  add_executable(LLMetalLinearSmoke)
+
+  target_sources(LLMetalLinearSmoke
+    PRIVATE
+      tests/linear_smoke.cpp
+      src/cpu/linear.cpp
+      src/metal_context.mm
+      src/tensor.mm
+      src/metal_job.mm
+  )
+
+  target_include_directories(LLMetalLinearSmoke
+    PRIVATE
+      include
+  )
+
+  set_target_properties(LLMetalLinearSmoke PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalLinearSmoke PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalLinearSmoke
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalLinearSmoke MetalLibs)
+
+  add_test(NAME linear COMMAND LLMetalLinearSmoke)
+  set_tests_properties(linear PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
 endif()
