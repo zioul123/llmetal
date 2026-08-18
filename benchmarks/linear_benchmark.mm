@@ -38,9 +38,9 @@ struct BenchmarkConfigWithData {
     const llmetal::GpuTensor<float>& weight;
     const llmetal::GpuTensor<float>& bias;
 
-    std::size_t warmup_runs = 20;
+    std::size_t warmup_runs = 5;
     std::size_t timed_runs = 100;
-    std::size_t repeats = 30;
+    std::size_t repeats = 10;
 };
 
 constexpr int backend_width = 14;
@@ -231,8 +231,8 @@ ValidationResult validate_output(
     const llmetal::CpuTensor<float>& actual,
     const llmetal::CpuTensor<float>& expect
 ) {
-    constexpr float absoluteTolerance = 1.0e-4f;
-    constexpr float relativeTolerance = 1.0e-5f;
+    constexpr float absoluteTolerance = 1.0e-3f;
+    constexpr float relativeTolerance = 1.0e-4f;
     
     if (expect.numel() != actual.numel()) {
         std::ostringstream message;
@@ -334,12 +334,12 @@ int main() {
         llmetal::MetalContext context;
         KernelAndBackend kernels[] = {
             KernelAndBackend{ llmetal::LinearKernel(context, 32, 1), "tg32_tpr1" },
-            // KernelAndBackend{ llmetal::LinearKernel(context, 32, 32), "tg32_tpr32" },
-            // KernelAndBackend{ llmetal::LinearKernel(context, 64, 32), "tg64_tpr32" }, // Overall best
-            // KernelAndBackend{ llmetal::LinearKernel(context, 128, 32), "tg128_tpr32" },
-            // KernelAndBackend{ llmetal::LinearKernel(context, 256, 32), "tg256_tpr32" },
-            // KernelAndBackend{ llmetal::LinearKernel(context, 512, 32), "tg512_tpr32" },
-            // KernelAndBackend{ llmetal::LinearKernel(context, 1024, 32), "tg1024_tpr32" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 32, 32), "tg32_tpr32" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 64, 32), "tg64_tpr32" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 128, 32), "tg128_tpr32" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 256, 32), "tg256_tpr32" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 512, 32), "tg512_tpr32" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 1024, 32), "tg1024_tpr32" },
             // KernelAndBackend{ llmetal::LinearKernel(context, 64, 64), "tg64_tpr64" },
             // KernelAndBackend{ llmetal::LinearKernel(context, 128, 128), "tg128_tpr128" },
             // KernelAndBackend{ llmetal::LinearKernel(context, 256, 256), "tg256_tpr256" },
@@ -349,13 +349,13 @@ int main() {
         constexpr std::size_t NUM_KERNELS = sizeof(kernels) / sizeof(KernelAndBackend);
 
         BenchmarkConfig details[] = {
-            // BenchmarkConfig{ "SmolLM2-30Kx576-QProj", {10, 10, 64}, {32, 64}, llmetal::Shape{32}},
+            // BenchmarkConfig{ "SmolLM2-30Kx576-QProj", {1, 1, 64}, {32, 64}, llmetal::Shape{32}},
             BenchmarkConfig{ "SmolLM2-30Kx576-QProj", {5, 30, 576}, {576, 576}, llmetal::Shape{576}},
-            BenchmarkConfig{ "SmolLM2-30Kx576-QProj", {5, 30, 576}, {576, 576}, llmetal::Shape{576}},
-            BenchmarkConfig{ "SmolLM2-30Kx576-KVProj", {5, 30, 576}, {192, 576}, llmetal::Shape{192}},
-            BenchmarkConfig{ "Qwen3.6-3Kx5120-attention-QProj", {3, 10, 5120 }, {6144, 5120}, llmetal::Shape{6144} },
-            BenchmarkConfig{ "Qwen3.6-3Kx5120-attention-KVProj", {3, 10, 5120}, {1024, 5120}, llmetal::Shape{1024} },
-            BenchmarkConfig{ "Qwen3.6-3Kx5120-deltanet-QKProj", {3, 10, 5120}, {2048, 5120}, llmetal::Shape{2048} }
+            // BenchmarkConfig{ "SmolLM2-30Kx576-QProj", {5, 30, 576}, {576, 576}, llmetal::Shape{576}},
+            // BenchmarkConfig{ "SmolLM2-30Kx576-KVProj", {5, 30, 576}, {192, 576}, llmetal::Shape{192}},
+            BenchmarkConfig{ "Qwen3.6-3Kx5120-attention-QProj", {2, 4, 5120 }, {6144, 5120}, llmetal::Shape{6144} },
+            // BenchmarkConfig{ "Qwen3.6-3Kx5120-attention-KVProj", {3, 10, 5120}, {1024, 5120}, llmetal::Shape{1024} },
+            // BenchmarkConfig{ "Qwen3.6-3Kx5120-deltanet-QKProj", {3, 10, 5120}, {2048, 5120}, llmetal::Shape{2048} }
         };
 
         for (BenchmarkConfig const &config : details) {

@@ -27,7 +27,7 @@ void linear(
             std::size_t bs_out_offset = (b * S + s) * O;
             
             for (std::size_t o = 0; o < O; ++o) { 
-                float weight_offset = o * I;
+                std::size_t weight_offset = o * I;
                 float curr = 0.0f;
                 for (std::size_t i = 0; i < I; ++i) {
                     curr += weight[weight_offset + i] * x[bs_in_offset + i];
@@ -66,7 +66,7 @@ void linear(
             std::size_t bs_out_offset = (b * S + s) * O;
             
             for (std::size_t o = 0; o < O; ++o) { 
-                float weight_offset = o * I;
+                std::size_t weight_offset = o * I;
                 float curr = 0.0f;
                 for (std::size_t i = 0; i < I; ++i) {
                     curr += weight[weight_offset + i] * x[bs_in_offset + i];

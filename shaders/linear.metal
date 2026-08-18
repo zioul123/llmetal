@@ -39,24 +39,27 @@ kernel void linear_with_bias_1sgpr(
     constant uint& input_hidden_size  [[buffer(4)]],
     constant uint& output_hidden_size [[buffer(5)]],
     constant uint& sequence_length    [[buffer(6)]],
-    uint2 index                       [[thread_position_in_grid]], // index.x: lane, index.y: row
-    uint2 grid_size                   [[threads_per_grid]],
+    uint3 index                       [[thread_position_in_grid]], // index.x: lane, index.y: output_row, index.z: batch and sequence
+    uint3 grid_size                   [[threads_per_grid]],
     uint tpsg                         [[threads_per_simdgroup]]
 ) {
-    // if (index.y >= grid_size.y) return;
+    if (index.x >= input_hidden_size || index.y >= grid_size.y || index.z >= grid_size.z) return;
 
-    // uint o = index.x;
-    // uint b = index.y / sequence_length;
-    // uint s = index.y % sequence_length;
-    // uint bs_in_offset = (b * sequence_length + s) * input_hidden_size;
-    // uint bs_out_offset = (b * sequence_length + s) * output_hidden_size;
-    // uint w_offset = o * input_hidden_size;
+    uint o = index.y;
+    uint b = index.z / sequence_length;
+    uint s = index.z % sequence_length;
+    uint bs_in_offset = (b * sequence_length + s) * input_hidden_size;
+    uint bs_out_offset = (b * sequence_length + s) * output_hidden_size;
+    uint w_offset = o * input_hidden_size;
 
-    // float sum = 0.0f;
-    // for (uint i = 0; i < input_hidden_size; ++i) { 
-    //     sum = fma(weight[w_offset + i], input[bs_in_offset + i], sum);
-    // }
-    // output[bs_out_offset + o] = sum + bias[o];
+    float sum = 0.0f;
+    for (uint i = index.x; i < input_hidden_size; i += tpsg) { 
+        sum = fma(weight[w_offset + i], input[bs_in_offset + i], sum);
+    }
+    sum = simd_sum(sum);
+    if (index.x == 0) {
+        output[bs_out_offset + o] = sum + bias[o];
+    }
 }
 
 // N simd groups per row, one row per threadgroup
@@ -124,24 +127,27 @@ kernel void linear_without_bias_1sgpr(
     constant uint& input_hidden_size  [[buffer(3)]],
     constant uint& output_hidden_size [[buffer(4)]],
     constant uint& sequence_length    [[buffer(5)]],
-    uint2 index                       [[thread_position_in_grid]], // index.x: lane, index.y: row
-    uint2 grid_size                   [[threads_per_grid]],
+    uint3 index                       [[thread_position_in_grid]], // index.x: lane, index.y: output_row, index.z: batch and sequence
+    uint3 grid_size                   [[threads_per_grid]],
     uint tpsg                         [[threads_per_simdgroup]]
 ) {
-    // if (index.y >= grid_size.y) return;
+    if (index.x >= input_hidden_size || index.y >= grid_size.y || index.z >= grid_size.z) return;
 
-    // uint o = index.x;
-    // uint b = index.y / sequence_length;
-    // uint s = index.y % sequence_length;
-    // uint bs_in_offset = (b * sequence_length + s) * input_hidden_size;
-    // uint bs_out_offset = (b * sequence_length + s) * output_hidden_size;
-    // uint w_offset = o * input_hidden_size;
+    uint o = index.y;
+    uint b = index.z / sequence_length;
+    uint s = index.z % sequence_length;
+    uint bs_in_offset = (b * sequence_length + s) * input_hidden_size;
+    uint bs_out_offset = (b * sequence_length + s) * output_hidden_size;
+    uint w_offset = o * input_hidden_size;
 
-    // float sum = 0.0f;
-    // for (uint i = 0; i < input_hidden_size; ++i) { 
-    //     sum = fma(weight[w_offset + i], input[bs_in_offset + i], sum);
-    // }
-    // output[bs_out_offset + o] = sum + bias[o];
+    float sum = 0.0f;
+    for (uint i = index.x; i < input_hidden_size; i += tpsg) { 
+        sum = fma(weight[w_offset + i], input[bs_in_offset + i], sum);
+    }
+    sum = simd_sum(sum);
+    if (index.x == 0) {
+        output[bs_out_offset + o] = sum;
+    }
 }
 
 // N simd groups per row, one row per threadgroup

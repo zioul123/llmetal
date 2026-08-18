@@ -247,7 +247,8 @@ MetalJob LinearKernel::submit_repeated(
         // 1 SIMD group per row, rptg rows per threadgroup
         NSUInteger rptg = impl_->tptg / impl_->tpr;
         MTLSize gridSize = MTLSizeMake(impl_->tpr, O, n_input);
-        MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, rptg, 1);
+        NSUInteger upperBoundHeight = rptg > gridSize.height ? gridSize.height : rptg;
+        MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, upperBoundHeight, 1);
         for (std::size_t i = 0; i < repeats; ++i) {
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         }
