@@ -340,11 +340,11 @@ int main() {
             KernelAndBackend{ llmetal::LinearKernel(context, 256, 32), "tg256_tpr32" },
             KernelAndBackend{ llmetal::LinearKernel(context, 512, 32), "tg512_tpr32" },
             KernelAndBackend{ llmetal::LinearKernel(context, 1024, 32), "tg1024_tpr32" },
-            // KernelAndBackend{ llmetal::LinearKernel(context, 64, 64), "tg64_tpr64" },
-            // KernelAndBackend{ llmetal::LinearKernel(context, 128, 128), "tg128_tpr128" },
-            // KernelAndBackend{ llmetal::LinearKernel(context, 256, 256), "tg256_tpr256" },
-            // KernelAndBackend{ llmetal::LinearKernel(context, 512, 512), "tg512_tpr512" }, // Best
-            // KernelAndBackend{ llmetal::LinearKernel(context, 1024, 1024), "tg1024_tpr1024" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 64, 64), "tg64_tpr64" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 128, 128), "tg128_tpr128" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 256, 256), "tg256_tpr256" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 512, 512), "tg512_tpr512" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 1024, 1024), "tg1024_tpr1024" },
         };
         constexpr std::size_t NUM_KERNELS = sizeof(kernels) / sizeof(KernelAndBackend);
 

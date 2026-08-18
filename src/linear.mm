@@ -159,10 +159,10 @@ MetalJob LinearKernel::submit_repeated(
         }
     } else if (impl_->tpr > impl_->pipeline_state_without_bias.threadExecutionWidth) {
         // N SIMD group per row, 1 row per threadgroup
-        NSUInteger sgptg = impl_->tpr / impl_->pipeline_state_without_bias.threadExecutionWidth;
+        NSUInteger sgpr = impl_->tpr / impl_->pipeline_state_without_bias.threadExecutionWidth;
         MTLSize gridSize = MTLSizeMake(impl_->tpr, O, n_input);
         MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, 1, 1);
-        [computeEncoder setBytes:&sgptg length:sizeof(uint) atIndex:6];
+        [computeEncoder setBytes:&sgpr length:sizeof(uint) atIndex:6];
         for (std::size_t i = 0; i < repeats; ++i) {
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         }
@@ -254,10 +254,10 @@ MetalJob LinearKernel::submit_repeated(
         }
     } else if (impl_->tpr > impl_->pipeline_state_with_bias.threadExecutionWidth) {
         // N SIMD group per row, 1 row per threadgroup
-        NSUInteger sgptg = impl_->tpr / impl_->pipeline_state_with_bias.threadExecutionWidth;
+        NSUInteger sgpr = impl_->tpr / impl_->pipeline_state_with_bias.threadExecutionWidth;
         MTLSize gridSize = MTLSizeMake(impl_->tpr, O, n_input);
         MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, 1, 1);
-        [computeEncoder setBytes:&sgptg length:sizeof(uint) atIndex:7];
+        [computeEncoder setBytes:&sgpr length:sizeof(uint) atIndex:7];
         for (std::size_t i = 0; i < repeats; ++i) {
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         }

@@ -71,26 +71,48 @@ kernel void linear_with_bias_nsgpr(
     constant uint& input_hidden_size  [[buffer(4)]],
     constant uint& output_hidden_size [[buffer(5)]],
     constant uint& sequence_length    [[buffer(6)]],
-    constant uint& sgptg              [[buffer(7)]],
-    uint2 index                       [[thread_position_in_grid]], // index.x: lane, index.y: row
-    uint2 grid_size                   [[threads_per_grid]],
+    constant uint& sgpr               [[buffer(7)]],
+    uint3 index                       [[thread_position_in_grid]], // index.x: lane, index.y: row
+    uint3 grid_size                   [[threads_per_grid]],
     uint tpsg                         [[threads_per_simdgroup]],
     uint lane                         [[thread_index_in_simdgroup]]
 ) {
-    // if (index.y >= grid_size.y) return;
+    threadgroup float partial_sums[32]; // Max 32 simd groups per row. A bit too much though.
 
-    // uint o = index.x;
-    // uint b = index.y / sequence_length;
-    // uint s = index.y % sequence_length;
-    // uint bs_in_offset = (b * sequence_length + s) * input_hidden_size;
-    // uint bs_out_offset = (b * sequence_length + s) * output_hidden_size;
-    // uint w_offset = o * input_hidden_size;
+    if (index.y >= grid_size.y || index.z >= grid_size.z) return;
 
-    // float sum = 0.0f;
-    // for (uint i = 0; i < input_hidden_size; ++i) { 
-    //     sum = fma(weight[w_offset + i], input[bs_in_offset + i], sum);
-    // }
-    // output[bs_out_offset + o] = sum + bias[o];
+    uint cpsg = (input_hidden_size + sgpr - 1) / sgpr;
+    uint o = index.y;
+    uint b = index.z / sequence_length;
+    uint s = index.z % sequence_length;
+
+    // Get row related information
+    uint bs_in_offset = (b * sequence_length + s) * input_hidden_size;
+    uint bs_out_offset = (b * sequence_length + s) * output_hidden_size;
+    uint w_offset = o * input_hidden_size;
+
+    // Get column related information
+    uint sg_idx = index.x / tpsg;
+    uint sg_start = sg_idx * cpsg;
+    uint sg_end = min(sg_start + cpsg, input_hidden_size);
+
+    float sum = 0.0f;
+    for (uint i = sg_start + lane; i < sg_end; i += tpsg) { 
+        sum = fma(weight[w_offset + i], input[bs_in_offset + i], sum);
+    }
+    sum = simd_sum(sum);
+    if (lane == 0) {
+        partial_sums[sg_idx] = sum;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sg_idx == 0) {
+        float total = lane < sgpr ? partial_sums[lane] : 0.0f;
+        total = simd_sum(total);
+        // total = simd_sum(partial_sums[lane]);
+        if (lane == 0) {
+            output[bs_out_offset + o] = total + bias[o];
+        }
+    }
 }
 
 kernel void linear_naive_without_bias(
@@ -158,24 +180,45 @@ kernel void linear_without_bias_nsgpr(
     constant uint& input_hidden_size  [[buffer(3)]],
     constant uint& output_hidden_size [[buffer(4)]],
     constant uint& sequence_length    [[buffer(5)]],
-    constant uint& sgptg              [[buffer(6)]],
-    uint2 index                       [[thread_position_in_grid]], // index.x: lane, index.y: row
-    uint2 grid_size                   [[threads_per_grid]],
+    constant uint& sgpr               [[buffer(6)]],
+    uint3 index                       [[thread_position_in_grid]], // index.x: lane, index.y: row
+    uint3 grid_size                   [[threads_per_grid]],
     uint tpsg                         [[threads_per_simdgroup]],
     uint lane                         [[thread_index_in_simdgroup]]
 ) {
-    // if (index.y >= grid_size.y) return;
+    threadgroup float partial_sums[32]; // Max 32 simd groups per row. A bit too much though.
+    if (index.y >= grid_size.y || index.z >= grid_size.z) return;
 
-    // uint o = index.x;
-    // uint b = index.y / sequence_length;
-    // uint s = index.y % sequence_length;
-    // uint bs_in_offset = (b * sequence_length + s) * input_hidden_size;
-    // uint bs_out_offset = (b * sequence_length + s) * output_hidden_size;
-    // uint w_offset = o * input_hidden_size;
+    uint cpsg = (input_hidden_size + sgpr - 1) / sgpr;
+    uint o = index.y;
+    uint b = index.z / sequence_length;
+    uint s = index.z % sequence_length;
 
-    // float sum = 0.0f;
-    // for (uint i = 0; i < input_hidden_size; ++i) { 
-    //     sum = fma(weight[w_offset + i], input[bs_in_offset + i], sum);
-    // }
-    // output[bs_out_offset + o] = sum + bias[o];
+    // Get row related information
+    uint bs_in_offset = (b * sequence_length + s) * input_hidden_size;
+    uint bs_out_offset = (b * sequence_length + s) * output_hidden_size;
+    uint w_offset = o * input_hidden_size;
+
+    // Get column related information
+    uint sg_idx = index.x / tpsg;
+    uint sg_start = sg_idx * cpsg;
+    uint sg_end = min(sg_start + cpsg, input_hidden_size);
+
+    float sum = 0.0f;
+    for (uint i = sg_start + lane; i < sg_end; i += tpsg) { 
+        sum = fma(weight[w_offset + i], input[bs_in_offset + i], sum);
+    }
+    sum = simd_sum(sum);
+    if (lane == 0) {
+        partial_sums[sg_idx] = sum;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sg_idx == 0) {
+        float total = lane < sgpr ? partial_sums[lane] : 0.0f;
+        total = simd_sum(total);
+        // total = simd_sum(partial_sums[lane]);
+        if (lane == 0) {
+            output[bs_out_offset + o] = total;
+        }
+    }
 }
