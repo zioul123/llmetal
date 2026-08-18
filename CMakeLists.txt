@@ -239,6 +239,40 @@ if(LLMETAL_BUILD_BENCHMARKS)
   )
 
   add_dependencies(LLMetalRoPEBenchmark MetalLibs)
+
+  # --- Linear benchmark ---
+  add_executable(LLMetalLinearBenchmark
+    benchmarks/linear_benchmark.mm
+    src/metal_context.mm
+    src/metal_job.mm
+    src/tensor.mm
+    src/linear.mm
+    src/cpu/linear.cpp
+  )
+
+  target_include_directories(LLMetalLinearBenchmark PRIVATE include)
+
+  set_target_properties(LLMetalLinearBenchmark PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalLinearBenchmark PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalLinearBenchmark
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalLinearBenchmark MetalLibs)
 endif()
 
 

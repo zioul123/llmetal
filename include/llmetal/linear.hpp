@@ -22,12 +22,14 @@ public:
                                     const GpuTensor<float>& weight,  // [O,I]
                                     GpuTensor<float>& output);       // [B,S,O]
     // With bias
-    [[nodiscard]] MetalJob submit(const GpuTensor<float>& input,                               const GpuTensor<float>& weight,
+    [[nodiscard]] MetalJob submit(const GpuTensor<float>& input,                               
+                                  const GpuTensor<float>& weight,
                                   const GpuTensor<float>& bias,  // [O]
                                   GpuTensor<float>& output);
     [[nodiscard]] MetalJob submit_repeated(
                                     std::size_t repeats,
-                                    const GpuTensor<float>& input,                                 const GpuTensor<float>& weight,
+                                    const GpuTensor<float>& input,
+                                    const GpuTensor<float>& weight,
                                     const GpuTensor<float>& bias,  // [O]
                                     GpuTensor<float>& output);
     [[nodiscard]] bool in_progress() const noexcept;

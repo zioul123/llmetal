@@ -121,7 +121,7 @@ MetalJob LinearKernel::submit_repeated(
     if (O == 0) throw std::runtime_error("Invalid hidden size");
 
     if (n_input * I != input.numel()) throw std::runtime_error("Invalid input size. Expected " + std::to_string(n_input * I) + " but got " + std::to_string(input.numel()));
-    if (n_input * O != output.numel()) throw std::runtime_error("Invalid output size. Expected " + std::to_string(n_input * I) + " but got " + std::to_string(input.numel()));
+    if (n_input * O != output.numel()) throw std::runtime_error("Invalid output size. Expected " + std::to_string(n_input * O) + " but got " + std::to_string(output.numel()));
     if (output.shape()[0] != B || output.shape()[1] != S || output.shape()[2] != O) {
         throw std::runtime_error("Invalid output shape. Expected [batch_size, sequence_length, output_hidden_size]");
     }
@@ -144,8 +144,8 @@ MetalJob LinearKernel::submit_repeated(
     if (impl_->tpr == 1) {
         // Naive - just one thread per output row
         MTLSize gridSize = MTLSizeMake(O, n_input, 1);
-        NSUInteger upperBound = impl_->tptg > gridSize.width ? gridSize.width : impl_->tptg;
-        MTLSize threadGroupSize = MTLSizeMake(upperBound, n_input, 1);
+        NSUInteger upperBoundWidth = impl_->tptg > gridSize.width ? gridSize.width : impl_->tptg;
+        MTLSize threadGroupSize = MTLSizeMake(upperBoundWidth, 1, 1);
         for (std::size_t i = 0; i < repeats; ++i) {
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         }
@@ -213,7 +213,7 @@ MetalJob LinearKernel::submit_repeated(
     if (O == 0) throw std::runtime_error("Invalid output hidden size");
 
     if (n_input * I != input.numel()) throw std::runtime_error("Invalid input size. Expected " + std::to_string(n_input * I) + " but got " + std::to_string(input.numel()));
-    if (n_input * O != output.numel()) throw std::runtime_error("Invalid output size. Expected " + std::to_string(n_input * I) + " but got " + std::to_string(input.numel()));
+    if (n_input * O != output.numel()) throw std::runtime_error("Invalid output size. Expected " + std::to_string(n_input * O) + " but got " + std::to_string(output.numel()));
     if (bias.shape()[0] != O) throw std::runtime_error("Invalid bias shape. Expected [output_hidden_size]");
     if (output.shape()[0] != B || output.shape()[1] != S || output.shape()[2] != O) {
         throw std::runtime_error("Invalid output shape. Expected [batch_size, sequence_length, output_hidden_size]");
@@ -238,8 +238,8 @@ MetalJob LinearKernel::submit_repeated(
     if (impl_->tpr == 1) {
         // Naive - just one thread per output row
         MTLSize gridSize = MTLSizeMake(O, n_input, 1);
-        NSUInteger upperBound = impl_->tptg > gridSize.width ? gridSize.width : impl_->tptg;
-        MTLSize threadGroupSize = MTLSizeMake(upperBound, n_input, 1);
+        NSUInteger upperBoundWidth = impl_->tptg > gridSize.width ? gridSize.width : impl_->tptg;
+        MTLSize threadGroupSize = MTLSizeMake(upperBoundWidth, 1, 1);
         for (std::size_t i = 0; i < repeats; ++i) {
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         }
