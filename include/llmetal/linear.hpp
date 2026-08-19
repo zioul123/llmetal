@@ -5,7 +5,7 @@
 namespace llmetal { class MetalContext;
 class LinearKernel {
 public:
-    explicit LinearKernel(MetalContext&, std::uint32_t tptg, std::uint32_t tpr);
+    explicit LinearKernel(MetalContext&, std::uint32_t tptg, std::uint32_t tpr, std::uint32_t rpt = 1);
     ~LinearKernel();
     LinearKernel(const LinearKernel&)=delete;
     LinearKernel& operator=(const LinearKernel&)=delete;

@@ -39,11 +39,11 @@ struct BenchmarkConfigWithData {
     const llmetal::GpuTensor<float>& bias;
 
     std::size_t warmup_runs = 5;
-    std::size_t timed_runs = 100;
-    std::size_t repeats = 10;
+    std::size_t timed_runs = 10;
+    std::size_t repeats = 10; // NOT USED YET
 };
 
-constexpr int backend_width = 14;
+constexpr int backend_width = 20;
 constexpr int shape_width   = 12;
 constexpr int time_width    = 16;
 constexpr int total_time_width = 19;  // 12 digits + " us"
@@ -158,14 +158,14 @@ BenchmarkResult run(
             auto start = now();
             if (with_bias) {
                 auto job = kernel.submit_repeated(
-                    config.warmup_runs, config.input, 
+                    config.timed_runs, config.input, 
                     config.weight, &config.bias,
                     output_tensor_gpu
                 );
                 job.wait();
             } else {
                 auto job = kernel.submit_repeated(
-                    config.warmup_runs, config.input, 
+                    config.timed_runs, config.input, 
                     config.weight, nullptr, output_tensor_gpu
                 );
                 job.wait();
@@ -189,7 +189,7 @@ BenchmarkResult run(
         auto start = now();
         if (with_bias) {
             auto job = kernel.submit_repeated(
-                config.warmup_runs, config.input, 
+                config.timed_runs, config.input, 
                 config.weight, &config.bias,
                 output_tensor_gpu
             );
@@ -197,7 +197,7 @@ BenchmarkResult run(
             batchGpuDuration = job.gpu_duration() / config.timed_runs;
         } else {
             auto job = kernel.submit_repeated(
-                config.warmup_runs, config.input, 
+                config.timed_runs, config.input, 
                 config.weight, nullptr, output_tensor_gpu
             );
             job.wait();
@@ -333,7 +333,10 @@ int main() {
     try {
         llmetal::MetalContext context;
         KernelAndBackend kernels[] = {
-            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1), "tg32_tpr1" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1), "tg32_tpr1_rpt1" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 2), "tg32_tpr1_rpt2" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 4), "tg32_tpr1_rpt4" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 8), "tg32_tpr1_rpt8" },
             KernelAndBackend{ llmetal::LinearKernel(context, 32, 32), "tg32_tpr32" },
             KernelAndBackend{ llmetal::LinearKernel(context, 64, 32), "tg64_tpr32" },
             KernelAndBackend{ llmetal::LinearKernel(context, 128, 32), "tg128_tpr32" },

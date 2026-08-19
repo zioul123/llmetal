@@ -7,16 +7,18 @@
 #include <Metal/Metal.h>
 #include <objc/NSObjCRuntime.h>
 #include <stdexcept>
+#include <string>
 
 namespace llmetal {
 
 class LinearKernel::Impl {
 public:
-    explicit Impl(MetalContext& context, std::uint32_t tptg, std::uint32_t tpr)
-        : metalContext(context), tptg(tptg), tpr(tpr) {};
+    explicit Impl(MetalContext& context, std::uint32_t tptg, std::uint32_t tpr, std::uint32_t rpt)
+        : metalContext(context), tptg(tptg), tpr(tpr), rpt(rpt) {};
     MetalContext& metalContext;
     std::uint32_t tptg; // threads per threadgroup
     std::uint32_t tpr;  // threads per row
+    std::uint32_t rpt;  // rows per thread (extra arithmetic intensity)
 private:
     id<MTLComputePipelineState> pipeline_state_with_bias = nil;
     id<MTLComputePipelineState> pipeline_state_without_bias = nil;
@@ -40,8 +42,8 @@ friend class LinearKernel;
 };
 
 
-LinearKernel::LinearKernel(MetalContext& context, std::uint32_t tptg, std::uint32_t tpr)
-    : impl_(std::make_unique<Impl>(context, tptg, tpr)) {
+LinearKernel::LinearKernel(MetalContext& context, std::uint32_t tptg, std::uint32_t tpr, std::uint32_t rpt)
+    : impl_(std::make_unique<Impl>(context, tptg, tpr, rpt)) {
     NSError* error = nil;
     id<MTLDevice> device = (__bridge id<MTLDevice>)context.device_handle();
 
@@ -60,6 +62,9 @@ LinearKernel::LinearKernel(MetalContext& context, std::uint32_t tptg, std::uint3
     if (tptg % tpr != 0) {
         throw std::runtime_error("tptg must be a multiple of tpr");
     }
+    if (rpt != 1 && rpt != 2 && rpt != 4 && rpt != 8) {  // too verbose, use array
+        throw std::runtime_error("rpt must be 1, 2, 4, or 8");
+    }
 
     // Just a throwaway so we can get the thread execution width 
     NSUInteger threadExecutionWidth; 
@@ -71,18 +76,18 @@ LinearKernel::LinearKernel(MetalContext& context, std::uint32_t tptg, std::uint3
         if (throwaway_pipeline == nil) throw std::runtime_error(std::string("Failed to create pipeline state: ") + [error.localizedDescription UTF8String]);
         threadExecutionWidth = throwaway_pipeline.threadExecutionWidth;
     }
-
-    NSString* name = tpr == 1 ? @"linear_naive"
-                   : tpr == threadExecutionWidth ? @"linear_1sgpr"
-                   : @"linear_nsgpr";
-    
+    std::string name_str = tpr == 1 ? "linear_naive"
+                         : tpr == threadExecutionWidth ? "linear_1sgpr"
+                         : "linear_nsgpr";
+    if (rpt != 1) name_str = name_str + "_x" + std::to_string(rpt);
+    NSString* name = @(name_str.c_str());
     id<MTLFunction> function_with_bias = LinearKernel::Impl::specialize(
         library, name, true
     );
     impl_->pipeline_state_with_bias = [device newComputePipelineStateWithFunction:function_with_bias error:&error];
     if (impl_->pipeline_state_with_bias == nil) {
-        throw std::runtime_error(std::string("Failed to create pipeline state: ") 
-                                 + [error.localizedDescription UTF8String]);
+        throw std::runtime_error(std::string("Failed to create pipeline state: ") + 
+                                 [error.localizedDescription UTF8String]);
     }
 
     id<MTLFunction> function_without_bias = LinearKernel::Impl::specialize(
@@ -158,8 +163,9 @@ MetalJob LinearKernel::submit_repeated(
 
     // Dispatch specific kernel
     if (impl_->tpr == 1) {
-        // Naive - just one thread per output row
-        MTLSize gridSize = MTLSizeMake(O, n_input, 1);
+        // Naive - just one thread per output row, though each thread can handle multiple rows
+        std::uint32_t rowGroups = (O + impl_->rpt - 1) / impl_->rpt;
+        MTLSize gridSize = MTLSizeMake(rowGroups, n_input, 1);
         NSUInteger upperBoundWidth = impl_->tptg > gridSize.width ? gridSize.width : impl_->tptg;
         MTLSize threadGroupSize = MTLSizeMake(upperBoundWidth, 1, 1);
         for (std::size_t i = 0; i < repeats; ++i) {
