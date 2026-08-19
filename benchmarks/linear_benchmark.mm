@@ -137,14 +137,14 @@ BenchmarkResult run(
         if (with_bias) {
             auto job = kernel.submit_repeated(
                 config.warmup_runs, config.input, 
-                config.weight, config.bias,
+                config.weight, &config.bias,
                 output_tensor_gpu
             );
             job.wait();
         } else {
             auto job = kernel.submit_repeated(
                 config.warmup_runs, config.input, 
-                config.weight, output_tensor_gpu
+                config.weight, nullptr, output_tensor_gpu
             );
             job.wait();
         }
@@ -159,14 +159,14 @@ BenchmarkResult run(
             if (with_bias) {
                 auto job = kernel.submit_repeated(
                     config.warmup_runs, config.input, 
-                    config.weight, config.bias,
+                    config.weight, &config.bias,
                     output_tensor_gpu
                 );
                 job.wait();
             } else {
                 auto job = kernel.submit_repeated(
                     config.warmup_runs, config.input, 
-                    config.weight, output_tensor_gpu
+                    config.weight, nullptr, output_tensor_gpu
                 );
                 job.wait();
             }
@@ -190,7 +190,7 @@ BenchmarkResult run(
         if (with_bias) {
             auto job = kernel.submit_repeated(
                 config.warmup_runs, config.input, 
-                config.weight, config.bias,
+                config.weight, &config.bias,
                 output_tensor_gpu
             );
             job.wait();
@@ -198,7 +198,7 @@ BenchmarkResult run(
         } else {
             auto job = kernel.submit_repeated(
                 config.warmup_runs, config.input, 
-                config.weight, output_tensor_gpu
+                config.weight, nullptr, output_tensor_gpu
             );
             job.wait();
             batchGpuDuration = job.gpu_duration() / config.timed_runs;
@@ -299,13 +299,13 @@ ValidationResult run(
     if (fixture.withBias) {
         auto job = kernel.submit(
             fixture.input, fixture.weight,
-            fixture.bias, output_tensor_gpu
+            &fixture.bias, output_tensor_gpu
         );
         job.wait();
     } else {
         auto job = kernel.submit(
             fixture.input, fixture.weight,
-            output_tensor_gpu
+            nullptr, output_tensor_gpu
         );
         job.wait();
     }

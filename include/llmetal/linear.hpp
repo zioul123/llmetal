@@ -15,23 +15,14 @@ public:
     // Without bias
     [[nodiscard]] MetalJob submit(const GpuTensor<float>& input,   // [B,S,I]
                                   const GpuTensor<float>& weight,  // [O,I]
+                                  const GpuTensor<float>* bias,    // [O], nullptr = no bias
                                   GpuTensor<float>& output);       // [B,S,O]
     [[nodiscard]] MetalJob submit_repeated(
                                     std::size_t repeats,
                                     const GpuTensor<float>& input,   // [B,S,I]
                                     const GpuTensor<float>& weight,  // [O,I]
+                                    const GpuTensor<float>* bias,    // [O], nullptr = no bias
                                     GpuTensor<float>& output);       // [B,S,O]
-    // With bias
-    [[nodiscard]] MetalJob submit(const GpuTensor<float>& input,                               
-                                  const GpuTensor<float>& weight,
-                                  const GpuTensor<float>& bias,  // [O]
-                                  GpuTensor<float>& output);
-    [[nodiscard]] MetalJob submit_repeated(
-                                    std::size_t repeats,
-                                    const GpuTensor<float>& input,
-                                    const GpuTensor<float>& weight,
-                                    const GpuTensor<float>& bias,  // [O]
-                                    GpuTensor<float>& output);
     [[nodiscard]] bool in_progress() const noexcept;
 private:
     class Impl;

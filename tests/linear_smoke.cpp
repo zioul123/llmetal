@@ -93,7 +93,7 @@ int main() {
             llmetal::Shape{ batch_size, sequence_length, output_hidden_size }
         );
         auto job = kernel.submit(
-            input_tensor_gpu, weight_tensor_gpu, bias_tensor_gpu, output_tensor_with_bias_gpu
+            input_tensor_gpu, weight_tensor_gpu, &bias_tensor_gpu, output_tensor_with_bias_gpu
         );
         job.wait();
         auto output_tensor_with_bias_gpu_cpu = context.download(output_tensor_with_bias_gpu);
@@ -109,7 +109,7 @@ int main() {
             llmetal::Shape{ batch_size, sequence_length, output_hidden_size }
         );
         job = kernel.submit(
-            input_tensor_gpu, weight_tensor_gpu, output_tensor_without_bias_gpu
+            input_tensor_gpu, weight_tensor_gpu, nullptr, output_tensor_without_bias_gpu
         );
         job.wait();
         auto output_tensor_without_bias_gpu_cpu = context.download(output_tensor_without_bias_gpu);
