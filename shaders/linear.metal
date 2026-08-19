@@ -129,8 +129,7 @@ kernel void linear_naive_x(
     uint2 index                       [[thread_position_in_grid]], // index.x: output_row_group, index.y: batch and sequence
     uint2 grid_size                   [[threads_per_grid]]
 ) {
-    uint rowGroup = index.x;
-    uint o = rowGroup * ROWS_PER_THREAD;
+    uint o = index.x * ROWS_PER_THREAD;
     uint b = index.y / sequence_length;
     uint s = index.y % sequence_length;
     uint bs_in_offset = (b * sequence_length + s) * input_hidden_size;
@@ -138,17 +137,21 @@ kernel void linear_naive_x(
     uint w_offset = o * input_hidden_size;
 
     float acc[ROWS_PER_THREAD] = {0.0f};
-    for (uint i = 0; i < input_hidden_size; ++i) { 
-        float vecValue = input[bs_in_offset + i];
+    
         
-        // Two loops are duplicates, but the first is for when it all rows are to be used,
-        // the second is when it's not a nice multiple and we need to trim the final rows
-        if (o + ROWS_PER_THREAD < output_hidden_size) {
+    // Two loops are duplicates, but the first is for when it all rows are to be used,
+    // the second is when it's not a nice multiple and we need to trim the final rows
+    if (o + ROWS_PER_THREAD <= output_hidden_size) {
+        for (uint i = 0; i < input_hidden_size; ++i) { 
+            float vecValue = input[bs_in_offset + i];
             #pragma unroll
             for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
                 acc[r] = fma(weight[w_offset + r * input_hidden_size + i], vecValue, acc[r]);
             }
-        } else {
+        }
+    } else {
+        for (uint i = 0; i < input_hidden_size; ++i) { 
+            float vecValue = input[bs_in_offset + i];
             #pragma unroll
             for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
                 if (o + r < output_hidden_size) {
@@ -188,6 +191,7 @@ kernel void linear_naive_x<8>(
 );
 
 // Only 1 simd group per row, multiple rows per threadgroup
+template<uint ROWS_PER_THREAD>
 kernel void linear_1sgpr_x(
     device const float* input         [[buffer(0)]], // [batch_size, sequence_length, input_hidden_size]
     device const float* weight        [[buffer(1)]], // [output_hidden_size, input_hidden_size]
@@ -202,22 +206,72 @@ kernel void linear_1sgpr_x(
 ) {
     if (index.x >= input_hidden_size || index.y >= grid_size.y || index.z >= grid_size.z) return;
 
-    uint o = index.y;
+    uint o = index.y * ROWS_PER_THREAD;
     uint b = index.z / sequence_length;
     uint s = index.z % sequence_length;
     uint bs_in_offset = (b * sequence_length + s) * input_hidden_size;
     uint bs_out_offset = (b * sequence_length + s) * output_hidden_size;
     uint w_offset = o * input_hidden_size;
 
-    float sum = 0.0f;
-    for (uint i = index.x; i < input_hidden_size; i += tpsg) { 
-        sum = fma(weight[w_offset + i], input[bs_in_offset + i], sum);
+    float acc[ROWS_PER_THREAD] = {0.0f};
+    // Two loops are duplicates, but the first is for when it all rows are to be used,
+    // the second is when it's not a nice multiple and we need to trim the final rows
+    if (o + ROWS_PER_THREAD <= output_hidden_size) {
+        for (uint i = index.x; i < input_hidden_size; i += tpsg) { 
+            float vecValue = input[bs_in_offset + i];
+            #pragma unroll
+            for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                acc[r] = fma(weight[w_offset + r * input_hidden_size + i], vecValue, acc[r]);
+            }
+        }
+    } else { 
+        for (uint i = index.x; i < input_hidden_size; i += tpsg) { 
+            float vecValue = input[bs_in_offset + i];
+            #pragma unroll
+            for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                if (o + r < output_hidden_size) {
+                    acc[r] = fma(weight[w_offset + r * input_hidden_size +i], vecValue, acc[r]);
+                }
+            }
+        }
     }
-    sum = simd_sum(sum);
+    #pragma unroll
+    for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+        acc[r] = simd_sum(acc[r]);
+    }
     if (index.x == 0) {
-        output[bs_out_offset + o] = has_bias ? sum + bias[o] : sum;
+        #pragma unroll
+        for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+            if (o + r < output_hidden_size) {
+                output[bs_out_offset + o + r] = has_bias ? acc[r] + bias[o + r] : acc[r];
+            }
+        }
     }
 }
+
+template [[host_name("linear_1sgpr_x2")]]
+kernel void linear_1sgpr_x<2>(
+    device const float*, device const float*, device const float*,
+    device float*,       constant uint&,      constant uint&,
+    constant uint&,      uint3,               uint3,
+    uint
+);
+
+template [[host_name("linear_1sgpr_x4")]]
+kernel void linear_1sgpr_x<4>(
+    device const float*, device const float*, device const float*,
+    device float*,       constant uint&,      constant uint&,
+    constant uint&,      uint3,               uint3,
+    uint
+);
+
+template [[host_name("linear_1sgpr_x8")]]
+kernel void linear_1sgpr_x<8>(
+    device const float*, device const float*, device const float*,
+    device float*,       constant uint&,      constant uint&,
+    constant uint&,      uint3,               uint3,
+    uint
+);
 
 // N simd groups per row, one row per threadgroup
 kernel void linear_nsgpr_x(

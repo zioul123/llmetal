@@ -13,12 +13,12 @@ namespace llmetal {
 
 class LinearKernel::Impl {
 public:
-    explicit Impl(MetalContext& context, std::uint32_t tptg, std::uint32_t tpr, std::uint32_t rpt)
-        : metalContext(context), tptg(tptg), tpr(tpr), rpt(rpt) {};
+    explicit Impl(MetalContext& context, std::uint32_t tptg, std::uint32_t tprg, std::uint32_t rptg)
+        : metalContext(context), tptg(tptg), tprg(tprg), rprg(rptg) {};
     MetalContext& metalContext;
     std::uint32_t tptg; // threads per threadgroup
-    std::uint32_t tpr;  // threads per row
-    std::uint32_t rpt;  // rows per thread (extra arithmetic intensity)
+    std::uint32_t tprg;  // threads per row group
+    std::uint32_t rprg;  // rows per row group (extra arithmetic intensity)
 private:
     id<MTLComputePipelineState> pipeline_state_with_bias = nil;
     id<MTLComputePipelineState> pipeline_state_without_bias = nil;
@@ -162,29 +162,30 @@ MetalJob LinearKernel::submit_repeated(
     [computeEncoder setBytes:&S length:sizeof(uint) atIndex:6];
 
     // Dispatch specific kernel
-    if (impl_->tpr == 1) {
-        // Naive - just one thread per output row, though each thread can handle multiple rows
-        std::uint32_t rowGroups = (O + impl_->rpt - 1) / impl_->rpt;
+    if (impl_->tprg == 1) {
+        // Naive - just one thread per row group
+        std::uint32_t rowGroups = (O + impl_->rprg - 1) / impl_->rprg;
         MTLSize gridSize = MTLSizeMake(rowGroups, n_input, 1);
         NSUInteger upperBoundWidth = impl_->tptg > gridSize.width ? gridSize.width : impl_->tptg;
         MTLSize threadGroupSize = MTLSizeMake(upperBoundWidth, 1, 1);
         for (std::size_t i = 0; i < repeats; ++i) {
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         }
-    } else if (impl_->tpr == impl_->pipeline_state_without_bias.threadExecutionWidth) {
-        // 1 SIMD group per row, rptg rows per threadgroup
-        NSUInteger rptg = impl_->tptg / impl_->tpr;
-        MTLSize gridSize = MTLSizeMake(impl_->tpr, O, n_input);
-        NSUInteger upperBoundHeight = rptg > gridSize.height ? gridSize.height : rptg;
-        MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, upperBoundHeight, 1);
+    } else if (impl_->tprg == impl_->pipeline_state_without_bias.threadExecutionWidth) {
+        // 1 SIMD group per row group, rgptg row groups per threadgroup
+        std::uint32_t rowGroups = (O + impl_->rprg - 1) / impl_->rprg;
+        NSUInteger rgptg = impl_->tptg / impl_->tprg;
+        MTLSize gridSize = MTLSizeMake(impl_->tprg, rowGroups, n_input);
+        NSUInteger upperBoundHeight = rgptg > gridSize.height ? gridSize.height : rgptg;
+        MTLSize threadGroupSize = MTLSizeMake(impl_->tprg, upperBoundHeight, 1);
         for (std::size_t i = 0; i < repeats; ++i) {
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         }
-    } else if (impl_->tpr > impl_->pipeline_state_without_bias.threadExecutionWidth) {
+    } else if (impl_->tprg > impl_->pipeline_state_without_bias.threadExecutionWidth) {
         // N SIMD group per row, 1 row per threadgroup
-        std::uint32_t sgpr = impl_->tpr / impl_->pipeline_state_without_bias.threadExecutionWidth;
-        MTLSize gridSize = MTLSizeMake(impl_->tpr, O, n_input);
-        MTLSize threadGroupSize = MTLSizeMake(impl_->tpr, 1, 1);
+        std::uint32_t sgpr = impl_->tprg / impl_->pipeline_state_without_bias.threadExecutionWidth;
+        MTLSize gridSize = MTLSizeMake(impl_->tprg, O, n_input);
+        MTLSize threadGroupSize = MTLSizeMake(impl_->tprg, 1, 1);
         [computeEncoder setBytes:&sgpr length:sizeof(uint) atIndex:7];
         for (std::size_t i = 0; i < repeats; ++i) {
             [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
