@@ -110,7 +110,6 @@ kernel void linear_nsgpr(
     if (sg_idx == 0) {
         float total = lane < sgpr ? partial_sums[lane] : 0.0f;
         total = simd_sum(total);
-        // total = simd_sum(partial_sums[lane]);
         if (lane == 0) {
             output[bs_out_offset + o] = has_bias ? total + bias[o] : total;
         }
@@ -274,6 +273,7 @@ kernel void linear_1sgpr_x<8>(
 );
 
 // N simd groups per row, one row per threadgroup
+template<uint ROWS_PER_THREAD>
 kernel void linear_nsgpr_x(
     device const float* input         [[buffer(0)]], // [batch_size, sequence_length, input_hidden_size]
     device const float* weight        [[buffer(1)]], // [output_hidden_size, input_hidden_size]
@@ -288,12 +288,13 @@ kernel void linear_nsgpr_x(
     uint tpsg                         [[threads_per_simdgroup]],
     uint lane                         [[thread_index_in_simdgroup]]
 ) {
-    threadgroup float partial_sums[32]; // Max 32 simd groups per row. A bit too much though.
+    constexpr uint MAX_SIMD_GROUPS = 32; // Max 32 simd groups per row. A bit too much though.
+    threadgroup float partial_sums[ROWS_PER_THREAD * MAX_SIMD_GROUPS];
 
     if (index.y >= grid_size.y || index.z >= grid_size.z) return;
 
     uint cpsg = (input_hidden_size + sgpr - 1) / sgpr;
-    uint o = index.y;
+    uint o = index.y * ROWS_PER_THREAD;
     uint b = index.z / sequence_length;
     uint s = index.z % sequence_length;
 
@@ -307,21 +308,85 @@ kernel void linear_nsgpr_x(
     uint sg_start = sg_idx * cpsg;
     uint sg_end = min(sg_start + cpsg, input_hidden_size);
 
-    float sum = 0.0f;
-    for (uint i = sg_start + lane; i < sg_end; i += tpsg) { 
-        sum = fma(weight[w_offset + i], input[bs_in_offset + i], sum);
+    float acc[ROWS_PER_THREAD] = {0.0f};
+    if (o + ROWS_PER_THREAD <= output_hidden_size) {
+        for (uint i = sg_start + lane; i < sg_end; i += tpsg) {
+            float vecValue = input[bs_in_offset + i];
+            #pragma unroll
+            for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                acc[r] = fma(weight[w_offset + r * input_hidden_size + i], vecValue, acc[r]);
+            }
+        }
+    } else {
+        for (uint i = sg_start + lane; i < sg_end; i += tpsg) {
+            float vecValue = input[bs_in_offset + i];
+            #pragma unroll
+            for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                if (o + r < output_hidden_size) {
+                    acc[r] = fma(weight[w_offset + r * input_hidden_size + i], vecValue, acc[r]);
+                }
+            }
+        }
     }
-    sum = simd_sum(sum);
+    #pragma unroll
+    for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+        acc[r] = simd_sum(acc[r]);
+    }
     if (lane == 0) {
-        partial_sums[sg_idx] = sum;
+        #pragma unroll
+        for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+            // TODO: Try both
+            // partial_sums[r + ROWS_PER_THREAD * sg_idx] = acc[r];
+            partial_sums[r * MAX_SIMD_GROUPS + sg_idx] = acc[r];
+        }
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (sg_idx == 0) {
-        float total = lane < sgpr ? partial_sums[lane] : 0.0f;
-        total = simd_sum(total);
-        // total = simd_sum(partial_sums[lane]);
-        if (lane == 0) {
-            output[bs_out_offset + o] = has_bias ? total + bias[o] : total;
+        if (o + ROWS_PER_THREAD <= output_hidden_size) {
+            #pragma unroll
+            for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                // TODO: Try both
+                // float total = lane < sgpr ? partial_sums[r + ROWS_PER_THREAD * lane] : 0.0f;
+                float total = lane < sgpr ? partial_sums[r * MAX_SIMD_GROUPS + lane] : 0.0f;
+                total = simd_sum(total);
+                if (lane == 0) {
+                    output[bs_out_offset + o + r] = has_bias ? total + bias[o + r] : total;
+                }
+            }
+        } else {
+            #pragma unroll
+            for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                if (r + o < output_hidden_size) {
+                    // TODO: Try both
+                    // float total = lane < sgpr ? partial_sums[r + ROWS_PER_THREAD * lane] : 0.0f;
+                    float total = lane < sgpr ? partial_sums[r * MAX_SIMD_GROUPS + lane] : 0.0f;
+                    total = simd_sum(total);
+                    if (lane == 0) {
+                        output[bs_out_offset + o + r] = has_bias ? total + bias[o + r] : total;
+                    }
+                }
+            }
         }
     }
 }
+
+template [[host_name("linear_nsgpr_x2")]]
+kernel void linear_nsgpr_x<2>(
+    device const float*, device const float*, device const float*, device float*,
+    constant uint&,      constant uint&,      constant uint&,      constant uint&,
+    uint3,               uint3,               uint,                uint
+);
+
+template [[host_name("linear_nsgpr_x4")]]
+kernel void linear_nsgpr_x<4>(
+    device const float*, device const float*, device const float*, device float*,
+    constant uint&,      constant uint&,      constant uint&,      constant uint&,
+    uint3,               uint3,               uint,                uint
+);
+
+template [[host_name("linear_nsgpr_x8")]]
+kernel void linear_nsgpr_x<8>(
+    device const float*, device const float*, device const float*, device float*,
+    constant uint&,      constant uint&,      constant uint&,      constant uint&,
+    uint3,               uint3,               uint,                uint
+);

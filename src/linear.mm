@@ -183,8 +183,9 @@ MetalJob LinearKernel::submit_repeated(
         }
     } else if (impl_->tprg > impl_->pipeline_state_without_bias.threadExecutionWidth) {
         // N SIMD group per row, 1 row per threadgroup
+        std::uint32_t rowGroups = (O + impl_->rprg - 1) / impl_->rprg;
         std::uint32_t sgpr = impl_->tprg / impl_->pipeline_state_without_bias.threadExecutionWidth;
-        MTLSize gridSize = MTLSizeMake(impl_->tprg, O, n_input);
+        MTLSize gridSize = MTLSizeMake(impl_->tprg, rowGroups, n_input);
         MTLSize threadGroupSize = MTLSizeMake(impl_->tprg, 1, 1);
         [computeEncoder setBytes:&sgpr length:sizeof(uint) atIndex:7];
         for (std::size_t i = 0; i < repeats; ++i) {
