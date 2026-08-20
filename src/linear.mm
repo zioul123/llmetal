@@ -13,12 +13,17 @@ namespace llmetal {
 
 class LinearKernel::Impl {
 public:
-    explicit Impl(MetalContext& context, std::uint32_t tptg, std::uint32_t tprg, std::uint32_t rptg)
-        : metalContext(context), tptg(tptg), tprg(tprg), rprg(rptg) {};
+    explicit Impl(MetalContext& context, 
+                  std::uint32_t tptg,
+                  std::uint32_t tprg,
+                  std::uint32_t rprg,
+                  std::uint32_t bsprg)
+        : metalContext(context), tptg(tptg), tprg(tprg), rprg(rprg), bsprg(bsprg) {};
     MetalContext& metalContext;
-    std::uint32_t tptg; // threads per threadgroup
+    std::uint32_t tptg;  // threads per threadgroup
     std::uint32_t tprg;  // threads per row group
     std::uint32_t rprg;  // rows per row group (extra arithmetic intensity)
+    std::uint32_t bsprg; // batch/sequence per row group (extra arithmetic intensity)
 private:
     id<MTLComputePipelineState> pipeline_state_with_bias = nil;
     id<MTLComputePipelineState> pipeline_state_without_bias = nil;
@@ -42,8 +47,12 @@ friend class LinearKernel;
 };
 
 
-LinearKernel::LinearKernel(MetalContext& context, std::uint32_t tptg, std::uint32_t tpr, std::uint32_t rpt)
-    : impl_(std::make_unique<Impl>(context, tptg, tpr, rpt)) {
+LinearKernel::LinearKernel(MetalContext& context,
+                           std::uint32_t tptg,
+                           std::uint32_t tprg,
+                           std::uint32_t rprg,
+                           std::uint32_t bsprg)
+    : impl_(std::make_unique<Impl>(context, tptg, tprg, rprg, bsprg)) {
     NSError* error = nil;
     id<MTLDevice> device = (__bridge id<MTLDevice>)context.device_handle();
 
@@ -59,10 +68,16 @@ LinearKernel::LinearKernel(MetalContext& context, std::uint32_t tptg, std::uint3
         );
     }
 
-    if (tptg % tpr != 0) {
+    if (tptg % tprg != 0) {
         throw std::runtime_error("tptg must be a multiple of tpr");
     }
-    if (rpt != 1 && rpt != 2 && rpt != 4 && rpt != 8) {  // too verbose, use array
+    if (rprg != 1 && bsprg != 1) {
+        throw std::runtime_error("Either rprg or bsprg must be 1");
+    }
+    if (bsprg != 1 && tprg != 1) {
+        throw std::runtime_error("If bsprg != 1, only naive (tprg == 1) is implemented");
+    }
+    if (rprg != 1 && rprg != 2 && rprg != 4 && rprg != 8) {  // too verbose, use array
         throw std::runtime_error("rpt must be 1, 2, 4, or 8");
     }
 
@@ -76,10 +91,11 @@ LinearKernel::LinearKernel(MetalContext& context, std::uint32_t tptg, std::uint3
         if (throwaway_pipeline == nil) throw std::runtime_error(std::string("Failed to create pipeline state: ") + [error.localizedDescription UTF8String]);
         threadExecutionWidth = throwaway_pipeline.threadExecutionWidth;
     }
-    std::string name_str = tpr == 1 ? "linear_naive"
-                         : tpr == threadExecutionWidth ? "linear_1sgpr"
+    std::string name_str = tprg == 1 ? "linear_naive"
+                         : tprg == threadExecutionWidth ? "linear_1sgpr"
                          : "linear_nsgpr";
-    if (rpt != 1) name_str = name_str + "_x" + std::to_string(rpt);
+    if (rprg != 1) name_str = name_str + "_rprgx" + std::to_string(rprg);
+    else if (bsprg != 1) name_str = name_str + "_bsprgx" + std::to_string(bsprg);
     NSString* name = @(name_str.c_str());
     id<MTLFunction> function_with_bias = LinearKernel::Impl::specialize(
         library, name, true
@@ -163,13 +179,29 @@ MetalJob LinearKernel::submit_repeated(
 
     // Dispatch specific kernel
     if (impl_->tprg == 1) {
-        // Naive - just one thread per row group
-        std::uint32_t rowGroups = (O + impl_->rprg - 1) / impl_->rprg;
-        MTLSize gridSize = MTLSizeMake(rowGroups, n_input, 1);
-        NSUInteger upperBoundWidth = impl_->tptg > gridSize.width ? gridSize.width : impl_->tptg;
-        MTLSize threadGroupSize = MTLSizeMake(upperBoundWidth, 1, 1);
-        for (std::size_t i = 0; i < repeats; ++i) {
-            [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+        // One row group (1, 2, 4 or 8 rows) managed by exactly 1 thread
+        if (impl_->bsprg == 1) {
+            // Just one thread per row group 
+            std::uint32_t rowGroups = (O + impl_->rprg - 1) / impl_->rprg;
+            MTLSize gridSize = MTLSizeMake(rowGroups, n_input, 1);
+            NSUInteger upperBoundWidth = impl_->tptg > gridSize.width ? gridSize.width : impl_->tptg;
+            MTLSize threadGroupSize = MTLSizeMake(upperBoundWidth, 1, 1);
+            for (std::size_t i = 0; i < repeats; ++i) {
+                [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+            }
+        } 
+        // One row managed by exactly 1 thread, bsprg (1, 2, 4 or 8) input tokens at once
+        else {
+            // Just one thread per row, but multiple inputs in parallel
+            std::uint32_t input_groups = (n_input + impl_->bsprg - 1) / impl_->bsprg;
+            MTLSize gridSize = MTLSizeMake(O, input_groups, 1);
+            NSUInteger upperBoundWidth = impl_->tptg > gridSize.width ? gridSize.width : impl_->tptg;
+            MTLSize threadGroupSize = MTLSizeMake(upperBoundWidth, 1, 1);
+            [computeEncoder setBytes:&n_input length:sizeof(uint) atIndex:7];
+            for (std::size_t i = 0; i < repeats; ++i) {
+                [computeEncoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
+            }
+
         }
     } else if (impl_->tprg == impl_->pipeline_state_without_bias.threadExecutionWidth) {
         // 1 SIMD group per row group, rgptg row groups per threadgroup

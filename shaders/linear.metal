@@ -117,7 +117,7 @@ kernel void linear_nsgpr(
 }
 
 template<uint ROWS_PER_THREAD>
-kernel void linear_naive_x(
+kernel void linear_naive_rprgx(
     device const float* input         [[buffer(0)]], // [batch_size, sequence_length, input_hidden_size]
     device const float* weight        [[buffer(1)]], // [output_hidden_size, input_hidden_size]
     device const float* bias          [[buffer(2), function_constant(has_bias)]], // [output_hidden_size]
@@ -168,22 +168,22 @@ kernel void linear_naive_x(
     }
 }
 
-template [[host_name("linear_naive_x2")]]
-kernel void linear_naive_x<2>(
+template [[host_name("linear_naive_rprgx2")]]
+kernel void linear_naive_rprgx<2>(
     device const float*, device const float*, device const float*,
     device float*,       constant uint&,      constant uint&,
     constant uint&,      uint2,               uint2
 );
 
-template [[host_name("linear_naive_x4")]]
-kernel void linear_naive_x<4>(
+template [[host_name("linear_naive_rprgx4")]]
+kernel void linear_naive_rprgx<4>(
     device const float*, device const float*, device const float*,
     device float*,       constant uint&,      constant uint&,
     constant uint&,      uint2,               uint2
 );
 
-template [[host_name("linear_naive_x8")]]
-kernel void linear_naive_x<8>(
+template [[host_name("linear_naive_rprgx8")]]
+kernel void linear_naive_rprgx<8>(
     device const float*, device const float*, device const float*,
     device float*,       constant uint&,      constant uint&,
     constant uint&,      uint2,               uint2
@@ -191,7 +191,7 @@ kernel void linear_naive_x<8>(
 
 // Only 1 simd group per row, multiple rows per threadgroup
 template<uint ROWS_PER_THREAD>
-kernel void linear_1sgpr_x(
+kernel void linear_1sgpr_rprgx(
     device const float* input         [[buffer(0)]], // [batch_size, sequence_length, input_hidden_size]
     device const float* weight        [[buffer(1)]], // [output_hidden_size, input_hidden_size]
     device const float* bias          [[buffer(2), function_constant(has_bias)]], // [output_hidden_size]
@@ -248,24 +248,24 @@ kernel void linear_1sgpr_x(
     }
 }
 
-template [[host_name("linear_1sgpr_x2")]]
-kernel void linear_1sgpr_x<2>(
+template [[host_name("linear_1sgpr_rprgx2")]]
+kernel void linear_1sgpr_rprgx<2>(
     device const float*, device const float*, device const float*,
     device float*,       constant uint&,      constant uint&,
     constant uint&,      uint3,               uint3,
     uint
 );
 
-template [[host_name("linear_1sgpr_x4")]]
-kernel void linear_1sgpr_x<4>(
+template [[host_name("linear_1sgpr_rprgx4")]]
+kernel void linear_1sgpr_rprgx<4>(
     device const float*, device const float*, device const float*,
     device float*,       constant uint&,      constant uint&,
     constant uint&,      uint3,               uint3,
     uint
 );
 
-template [[host_name("linear_1sgpr_x8")]]
-kernel void linear_1sgpr_x<8>(
+template [[host_name("linear_1sgpr_rprgx8")]]
+kernel void linear_1sgpr_rprgx<8>(
     device const float*, device const float*, device const float*,
     device float*,       constant uint&,      constant uint&,
     constant uint&,      uint3,               uint3,
@@ -274,7 +274,7 @@ kernel void linear_1sgpr_x<8>(
 
 // N simd groups per row, one row per threadgroup
 template<uint ROWS_PER_THREAD>
-kernel void linear_nsgpr_x(
+kernel void linear_nsgpr_rprgx(
     device const float* input         [[buffer(0)]], // [batch_size, sequence_length, input_hidden_size]
     device const float* weight        [[buffer(1)]], // [output_hidden_size, input_hidden_size]
     device const float* bias          [[buffer(2), function_constant(has_bias)]], // [output_hidden_size]
@@ -370,23 +370,102 @@ kernel void linear_nsgpr_x(
     }
 }
 
-template [[host_name("linear_nsgpr_x2")]]
-kernel void linear_nsgpr_x<2>(
+template [[host_name("linear_nsgpr_rprgx2")]]
+kernel void linear_nsgpr_rprgx<2>(
     device const float*, device const float*, device const float*, device float*,
     constant uint&,      constant uint&,      constant uint&,      constant uint&,
     uint3,               uint3,               uint,                uint
 );
 
-template [[host_name("linear_nsgpr_x4")]]
-kernel void linear_nsgpr_x<4>(
+template [[host_name("linear_nsgpr_rprgx4")]]
+kernel void linear_nsgpr_rprgx<4>(
     device const float*, device const float*, device const float*, device float*,
     constant uint&,      constant uint&,      constant uint&,      constant uint&,
     uint3,               uint3,               uint,                uint
 );
 
-template [[host_name("linear_nsgpr_x8")]]
-kernel void linear_nsgpr_x<8>(
+template [[host_name("linear_nsgpr_rprgx8")]]
+kernel void linear_nsgpr_rprgx<8>(
     device const float*, device const float*, device const float*, device float*,
     constant uint&,      constant uint&,      constant uint&,      constant uint&,
     uint3,               uint3,               uint,                uint
+);
+
+template<uint BS_PER_THREAD>
+kernel void linear_naive_bsprgx(
+    device const float* input         [[buffer(0)]], // [batch_size, sequence_length, input_hidden_size]
+    device const float* weight        [[buffer(1)]], // [output_hidden_size, input_hidden_size]
+    device const float* bias          [[buffer(2), function_constant(has_bias)]], // [output_hidden_size]
+    device float* output              [[buffer(3)]], // [batch_size, sequence_length, output_hidden_size]
+    constant uint& input_hidden_size  [[buffer(4)]],
+    constant uint& output_hidden_size [[buffer(5)]],
+    constant uint& sequence_length    [[buffer(6)]],
+    constant uint& n_input            [[buffer(7)]], // batch_size * sequence_length
+    uint2 index                       [[thread_position_in_grid]], // index.x: output_row_group, index.y: batch and sequence
+    uint2 grid_size                   [[threads_per_grid]]
+) {
+    uint o = index.x;
+    uint bs = index.y * BS_PER_THREAD;
+    uint bs_in_offset = bs * input_hidden_size;
+    uint bs_out_offset = bs * output_hidden_size;
+    uint w_offset = o * input_hidden_size;
+
+    float acc[BS_PER_THREAD] = {0.0f};
+    // Two loops are duplicates, but the first is for when it all b/s are to be used,
+    // the second is when it's not a nice multiple and we need to trim the final rows
+    if (bs + BS_PER_THREAD <= n_input) {
+        for (uint i = 0; i < input_hidden_size; ++i) { 
+            float weightValue = weight[w_offset + i];
+            #pragma unroll
+            for (uint j = 0; j < BS_PER_THREAD; ++j) {
+                acc[j] = fma(weightValue, input[bs_in_offset + j * input_hidden_size + i], acc[j]);
+            }
+        }
+    } else {
+        for (uint i = 0; i < input_hidden_size; ++i) { 
+            float weightValue = weight[w_offset + i];
+            #pragma unroll
+            for (uint j = 0; j < BS_PER_THREAD; ++j) {
+                if (bs + j < n_input) {
+                    acc[j] = fma(weightValue, input[bs_in_offset + j * input_hidden_size + i], acc[j]);
+                }
+            }
+        }
+    }
+
+    #pragma unroll
+    for (uint j = 0; j < BS_PER_THREAD; ++j) {
+        if (bs + j < n_input) {
+            output[bs_out_offset + j * output_hidden_size + o] 
+                = has_bias ? acc[j] + bias[o] : acc[j];
+        }
+    }
+}
+
+template [[host_name("linear_naive_bsprgx2")]]
+kernel void linear_naive_bsprgx<2>(
+    device const float*, device const float*, device const float*, device float*,
+    constant uint&,      constant uint&,      constant uint&,      constant uint&,
+    uint2,               uint2
+);
+
+template [[host_name("linear_naive_bsprgx4")]]
+kernel void linear_naive_bsprgx<4>(
+    device const float*, device const float*, device const float*, device float*,
+    constant uint&,      constant uint&,      constant uint&,      constant uint&,
+    uint2,               uint2
+);
+
+template [[host_name("linear_naive_bsprgx8")]]
+kernel void linear_naive_bsprgx<8>(
+    device const float*, device const float*, device const float*, device float*,
+    constant uint&,      constant uint&,      constant uint&,      constant uint&,
+    uint2,               uint2
+);
+
+template [[host_name("linear_naive_bsprgx16")]]
+kernel void linear_naive_bsprgx<16>(
+    device const float*, device const float*, device const float*, device float*,
+    constant uint&,      constant uint&,      constant uint&,      constant uint&,
+    uint2,               uint2
 );
