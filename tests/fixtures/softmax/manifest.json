@@ -1,0 +1,74 @@
+{
+  "format": "llmetal-raw-fixture",
+  "format_version": 1,
+  "source": "05_stable_softmax_toy.npz",
+  "arrays": {
+    "logits": {
+      "file": "logits.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        3,
+        5
+      ],
+      "element_count": 15,
+      "byte_count": 60,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "1f4aa0c5ade70507cc96411b695bb9fce8a0fb427d931ae24cbce06fc0f30303"
+    },
+    "valid": {
+      "file": "valid.i64",
+      "dtype": "int64",
+      "cpp_type": "std::int64_t",
+      "shape": [
+        3
+      ],
+      "element_count": 3,
+      "byte_count": 24,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "59cd57a19b34c873ad63e5df970dc67a1873947804a55c4c14a59d8976e28bed"
+    },
+    "row_max": {
+      "file": "row_max.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        3
+      ],
+      "element_count": 3,
+      "byte_count": 12,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "57cd121ec1f7b9517a93f650ae0fc896a87f7d716551d6b9b7280a5b7c0e5a3b"
+    },
+    "sum_exp": {
+      "file": "sum_exp.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        3
+      ],
+      "element_count": 3,
+      "byte_count": 12,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "5cfdde5c98707829c7f480e60f3914139dd656b11bc4fe9a41f95068816420e0"
+    },
+    "expected": {
+      "file": "expected.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        3,
+        5
+      ],
+      "element_count": 15,
+      "byte_count": 60,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "f7cbab47e63422d35e407150d27b27e2005d431c298e603506c986534eeb0d3c"
+    }
+  }
+}

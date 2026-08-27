@@ -554,4 +554,50 @@ if(BUILD_TESTING)
   set_tests_properties(linear PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
+
+  # --- LLMetalSoftmaxSmoke ---
+
+  add_executable(LLMetalSoftmaxSmoke)
+
+  target_sources(LLMetalSoftmaxSmoke
+    PRIVATE
+      tests/softmax_smoke.cpp
+      src/cpu/softmax.cpp
+      src/metal_context.mm
+      src/tensor.mm
+      src/metal_job.mm
+  )
+
+  target_include_directories(LLMetalSoftmaxSmoke
+    PRIVATE
+      include
+  )
+
+  set_target_properties(LLMetalSoftmaxSmoke PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalSoftmaxSmoke PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalSoftmaxSmoke
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalSoftmaxSmoke MetalLibs)
+
+  add_test(NAME softmax COMMAND LLMetalSoftmaxSmoke)
+  set_tests_properties(softmax PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
 endif()

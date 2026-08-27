@@ -7,7 +7,6 @@
 #include "llmetal/io/reader.hpp"
 
 #include <iostream>
-#include <vector>
 
 
 int main() {
