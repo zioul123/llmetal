@@ -469,3 +469,112 @@ kernel void linear_naive_bsprgx<16>(
     constant uint&,      constant uint&,      constant uint&,      constant uint&,
     uint2,               uint2
 );
+
+template<uint ROWS_PER_THREAD, uint BS_PER_THREAD>
+kernel void linear_2d_tiled(
+    device const float* input         [[buffer(0)]], // [batch_size, sequence_length, input_hidden_size]
+    device const float* weight        [[buffer(1)]], // [output_hidden_size, input_hidden_size]
+    device const float* bias          [[buffer(2), function_constant(has_bias)]], // [output_hidden_size]
+    device float* output              [[buffer(3)]], // [batch_size, sequence_length, output_hidden_size]
+    constant uint& input_hidden_size  [[buffer(4)]],
+    constant uint& output_hidden_size [[buffer(5)]],
+    constant uint& sequence_length    [[buffer(6)]],
+    constant uint& n_input            [[buffer(7)]], // batch_size * sequence_length
+    uint2 index                       [[thread_position_in_grid]], // index.x: output_row_group, index.y: batch and sequence
+    uint2 grid_size                   [[threads_per_grid]]
+) {
+    uint o = index.x * ROWS_PER_THREAD;
+    uint bs = index.y * BS_PER_THREAD;
+    uint bs_in_offset = bs * input_hidden_size;
+    uint bs_out_offset = bs * output_hidden_size;
+    uint w_offset = o * input_hidden_size;
+
+    float acc[ROWS_PER_THREAD][BS_PER_THREAD] = {{0.0f}};
+
+    // Four loops are duplicates, for nice multiple vs when we need to trim the final rows
+    if (o + ROWS_PER_THREAD <= output_hidden_size && bs + BS_PER_THREAD <= n_input) {
+        for (uint i = 0; i < input_hidden_size; ++i) { 
+            #pragma unroll
+            for (uint n = 0; n < BS_PER_THREAD; ++n) {
+                float vecValue = input[bs_in_offset + n * input_hidden_size + i];
+                #pragma unroll
+                for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                    float weightValue = weight[w_offset + r * input_hidden_size + i];
+                    acc[r][n] = fma(weightValue, vecValue, acc[r][n]);
+                }
+            }
+        }
+    } else if (o + ROWS_PER_THREAD <= output_hidden_size) {
+        for (uint i = 0; i < input_hidden_size; ++i) { 
+            #pragma unroll
+            for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                if (o + r < output_hidden_size) {
+                    float weightValue = weight[w_offset + r * input_hidden_size + i];
+                    #pragma unroll
+                    for (uint n = 0; n < BS_PER_THREAD; ++n) {
+                        float vecValue = input[bs_in_offset + n * input_hidden_size + i];
+                        acc[r][n] = fma(weightValue, vecValue, acc[r][n]);
+                    }
+                }
+            }
+        }
+    } else if (bs + BS_PER_THREAD <= n_input) {
+        for (uint i = 0; i < input_hidden_size; ++i) { 
+            #pragma unroll
+            for (uint n = 0; n < BS_PER_THREAD; ++n) {
+                if (bs + n < n_input) {
+                    float vecValue = input[bs_in_offset + n * input_hidden_size + i];
+                    #pragma unroll
+                    for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                        float weightValue = weight[w_offset + r * input_hidden_size + i];
+                        acc[r][n] = fma(weightValue, vecValue, acc[r][n]);
+                    }
+                }
+            }
+        }
+    } else {
+        for (uint i = 0; i < input_hidden_size; ++i) { 
+            #pragma unroll
+            for (uint n = 0; n < BS_PER_THREAD; ++n) {
+                if (bs + n < n_input) {
+                    float vecValue = input[bs_in_offset + n * input_hidden_size + i];
+                    #pragma unroll
+                    for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                        if (o + r < output_hidden_size) {
+                            float weightValue = weight[w_offset + r * input_hidden_size + i];
+                            acc[r][n] = fma(weightValue, vecValue, acc[r][n]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #pragma unroll
+    for (uint n = 0; n < BS_PER_THREAD; ++n) {
+        if (bs + n < n_input) {
+            #pragma unroll
+            for (uint r = 0; r < ROWS_PER_THREAD; ++r) {
+                if (o + r < output_hidden_size) {
+                    output[bs_out_offset + n * output_hidden_size + o + r] 
+                        = has_bias ? acc[r][n] + bias[o + r] : acc[r][n];
+                }
+            }
+        }
+    }
+}
+
+template [[host_name("linear_2d_tiled_4x4")]]
+kernel void linear_2d_tiled<4,4>(
+    device const float*, device const float*, device const float*, device float*,
+    constant uint&,      constant uint&,      constant uint&,      constant uint&,
+    uint2,               uint2
+);
+
+template [[host_name("linear_2d_tiled_8x8")]]
+kernel void linear_2d_tiled<8,8>(
+    device const float*, device const float*, device const float*, device float*,
+    constant uint&,      constant uint&,      constant uint&,      constant uint&,
+    uint2,               uint2
+);
+

@@ -333,31 +333,46 @@ int main() {
     try {
         llmetal::MetalContext context;
         KernelAndBackend kernels[] = {
+            // Full naive
             KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 1), "tg32_tpr1" },
-            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 1, 2), "tg32_tpr1_bsprg2" },
-            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 1, 4), "tg32_tpr1_bsprg4" },
-            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 1, 8), "tg32_tpr1_bsprg8" },
-            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 1, 16), "tg32_tpr1_bsprg16" },
+            // A single SIMD group per output row, seeing whether threagroup size can be optimized
             KernelAndBackend{ llmetal::LinearKernel(context, 32, 32, 1), "tg32_tpr32" },
             KernelAndBackend{ llmetal::LinearKernel(context, 64, 32, 1), "tg64_tpr32" },
             KernelAndBackend{ llmetal::LinearKernel(context, 128, 32, 1), "tg128_tpr32" },
             KernelAndBackend{ llmetal::LinearKernel(context, 256, 32, 1), "tg256_tpr32" },
             KernelAndBackend{ llmetal::LinearKernel(context, 512, 32, 1), "tg512_tpr32" },
             KernelAndBackend{ llmetal::LinearKernel(context, 1024, 32, 1), "tg1024_tpr32" },
+            // Batching by batch/sequence dimension
+            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 1, 2), "tg32_tpr1_bsprg2" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 1, 4), "tg32_tpr1_bsprg4" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 1, 8), "tg32_tpr1_bsprg8" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 32, 1, 1, 16), "tg32_tpr1_bsprg16" }, // Best for small
+            // With the best of them, seeing whether threadgroup size can be optimized 
+            KernelAndBackend{ llmetal::LinearKernel(context, 64, 1, 1, 16), "tg64_tpr1_bsprg16" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 128, 1, 1, 16), "tg128_tpr1_bsprg16" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 256, 1, 1, 16), "tg256_tpr1_bsprg16" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 512, 1, 1, 16), "tg512_tpr1_bsprg16" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 1024, 1, 1, 16), "tg1024_tpr1_bsprg16" },
+            // Batching by output row dimension
             KernelAndBackend{ llmetal::LinearKernel(context, 64, 64, 1), "tg64_tpr64" },
             KernelAndBackend{ llmetal::LinearKernel(context, 128, 128, 1), "tg128_tpr128" },
             KernelAndBackend{ llmetal::LinearKernel(context, 256, 256, 1), "tg256_tpr256" },
             KernelAndBackend{ llmetal::LinearKernel(context, 512, 512, 1), "tg512_tpr512" },
             KernelAndBackend{ llmetal::LinearKernel(context, 1024, 1024, 1), "tg1024_tpr1024" },
+            // 2D Tiling
+            KernelAndBackend{ llmetal::LinearKernel(context, 256, 1, 4, 4), "tg256_rpt4_npr4" },
+            KernelAndBackend{ llmetal::LinearKernel(context, 256, 1, 8, 8), "tg256_rpt8_npr8" }, // Best for big
         };
         constexpr std::size_t NUM_KERNELS = sizeof(kernels) / sizeof(KernelAndBackend);
 
         BenchmarkConfig details[] = {
             // BenchmarkConfig{ "SmolLM2-30Kx576-QProj", {1, 1, 64}, {32, 64}, llmetal::Shape{32}},
-            BenchmarkConfig{ "SmolLM2-30Kx576-QProj", {5, 30, 576}, {576, 576}, llmetal::Shape{576}},
+            BenchmarkConfig{ "SmolLM2-30Kx576-QProj-32", {8, 4, 576}, {576, 576}, llmetal::Shape{576}},
+            BenchmarkConfig{ "SmolLM2-30Kx576-QProj", {1, 1, 576}, {576, 576}, llmetal::Shape{576}},
             // BenchmarkConfig{ "SmolLM2-30Kx576-QProj", {5, 30, 576}, {576, 576}, llmetal::Shape{576}},
             // BenchmarkConfig{ "SmolLM2-30Kx576-KVProj", {5, 30, 576}, {192, 576}, llmetal::Shape{192}},
-            BenchmarkConfig{ "Qwen3.6-3Kx5120-attention-QProj", {6, 4, 5120 }, {6144, 5120}, llmetal::Shape{6144} },
+            BenchmarkConfig{ "Qwen3.6-3Kx5120-attention-QProj-32", {8, 4, 5120 }, {6144, 5120}, llmetal::Shape{6144} },
+            BenchmarkConfig{ "Qwen3.6-3Kx5120-attention-QProj", {1, 1, 5120 }, {6144, 5120}, llmetal::Shape{6144} },
             // BenchmarkConfig{ "Qwen3.6-3Kx5120-attention-KVProj", {3, 10, 5120}, {1024, 5120}, llmetal::Shape{1024} },
             // BenchmarkConfig{ "Qwen3.6-3Kx5120-deltanet-QKProj", {3, 10, 5120}, {2048, 5120}, llmetal::Shape{2048} }
         };
