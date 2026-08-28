@@ -65,6 +65,7 @@ set(LLMETAL_SHADER_NAMES
   embedding
   rms_norm
   rope
+  softmax
 )
 
 set(LLMETAL_METALLIBS)
@@ -563,6 +564,7 @@ if(BUILD_TESTING)
     PRIVATE
       tests/softmax_smoke.cpp
       src/cpu/softmax.cpp
+      src/softmax.mm
       src/metal_context.mm
       src/tensor.mm
       src/metal_job.mm

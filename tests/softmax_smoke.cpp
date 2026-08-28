@@ -2,6 +2,7 @@
 #include <llmetal/tensor.hpp>
 #include "llmetal/metal_context.hpp"
 #include "llmetal/cpu/softmax.hpp"
+#include "llmetal/softmax.hpp"
 #include "llmetal/verification/equality.hpp"
 #include "llmetal/io/reader.hpp"
 
@@ -53,6 +54,26 @@ int main() {
             return 1;
         }
 
+        llmetal::MetalContext context;
+        llmetal::SoftmaxKernel kernel(context, 32, 1, 1);
+        auto logits_tensor_gpu = context.upload(logits_tensor_cpu);
+        auto valid_tensor_gpu = context.upload(valid_tensor_cpu);
+        auto output_tensor_gpu = context.allocate<float>(
+            llmetal::Shape{ n_input, max_seq }
+        );
+        
+        // // Verify with bias
+        auto job = kernel.submit(
+            logits_tensor_gpu, valid_tensor_gpu, output_tensor_gpu
+        );
+        job.wait();
+        auto output_tensor_gpu_cpu = context.download(output_tensor_gpu);
+        result = verify_equal(output_tensor_gpu_cpu, expected_tensor_cpu);
+
+        if (!result) {
+            std::cerr << "Softmax test failed." << '\n';
+            return 1;
+        }
     } catch (const std::exception& error) {
         std::cerr << "Softmax test failed: " << error.what() << '\n';
         return 1;

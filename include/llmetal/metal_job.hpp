@@ -29,6 +29,7 @@ private:
     friend class EmbeddingKernel;
     friend class RmsNormKernel;
     friend class RoPEKernel;
+    friend class SoftmaxKernel;
 };
 
 } // namespace llmetal

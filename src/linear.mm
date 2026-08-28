@@ -20,10 +20,10 @@ public:
                   std::uint32_t npt)
         : metalContext(context), tptg(tptg), tpr(tpr), rpt(rpt), npt(npt) {};
     MetalContext& metalContext;
-    std::uint32_t tptg;  // threads per threadgroup
+    std::uint32_t tptg; // threads per threadgroup
     std::uint32_t tpr;  // threads per row - only applicable for 1D output row tiled
     std::uint32_t rpt;  // rows per row group (extra arithmetic intensity)
-    std::uint32_t npt; // batch/sequence per row group (extra arithmetic intensity)
+    std::uint32_t npt;  // batch/sequence per row group (extra arithmetic intensity)
 private:
     id<MTLComputePipelineState> pipeline_state_with_bias = nil;
     id<MTLComputePipelineState> pipeline_state_without_bias = nil;

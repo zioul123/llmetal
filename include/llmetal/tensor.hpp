@@ -149,6 +149,7 @@ private:
     friend class LinearKernel;
     friend class RmsNormKernel;
     friend class RoPEKernel;
+    friend class SoftmaxKernel;
 };
 
 }
