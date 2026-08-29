@@ -274,6 +274,40 @@ if(LLMETAL_BUILD_BENCHMARKS)
   )
 
   add_dependencies(LLMetalLinearBenchmark MetalLibs)
+
+  # --- Softmax benchmark ---
+  add_executable(LLMetalSoftmaxBenchmark
+    benchmarks/softmax_benchmark.mm
+    src/metal_context.mm
+    src/metal_job.mm
+    src/tensor.mm
+    src/softmax.mm
+    src/cpu/softmax.cpp
+  )
+
+  target_include_directories(LLMetalSoftmaxBenchmark PRIVATE include)
+
+  set_target_properties(LLMetalSoftmaxBenchmark PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalSoftmaxBenchmark PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalSoftmaxBenchmark
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalSoftmaxBenchmark MetalLibs)
 endif()
 
 
