@@ -49,6 +49,18 @@ int main() {
             return 1;
         }
 
+        // Verify cpu flash oracle
+        llmetal::CpuTensor<float> output_tensor_cpu_flash(q_shape);
+        llmetal::cpu::gqaPrefillFlash(q_tensor_cpu, k_tensor_cpu, v_tensor_cpu, output_tensor_cpu_flash);
+
+        // Verify cpu oracle.
+        result = verify_equal(output_tensor_cpu_flash, expected_tensor_cpu);
+
+        if (!result) {
+            std::cerr << "gqa flash prefill test failed - cpu oracle not matching." << '\n';
+            return 1;
+        }
+
         // llmetal::MetalContext context;
         // llmetal::SoftmaxKernel kernel(context, 32, 1, 1);
         // auto logits_tensor_gpu = context.upload(logits_tensor_cpu);
