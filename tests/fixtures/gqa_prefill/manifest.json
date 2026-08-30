@@ -1,0 +1,87 @@
+{
+  "format": "llmetal-raw-fixture",
+  "format_version": 1,
+  "source": "05_attention_packed_toy.npz",
+  "arrays": {
+    "q": {
+      "file": "q.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        2,
+        3,
+        4,
+        4
+      ],
+      "element_count": 96,
+      "byte_count": 384,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "75086f5529a56b9c526f4a7cbe8dcf604d882dd35ed967a9c0e841b320799b0d"
+    },
+    "k": {
+      "file": "k.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        2,
+        3,
+        2,
+        4
+      ],
+      "element_count": 48,
+      "byte_count": 192,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "eef2124a6844eb95d8628137c6d577962746098135afc325c4da7d6dbe0f91dc"
+    },
+    "v": {
+      "file": "v.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        2,
+        3,
+        2,
+        4
+      ],
+      "element_count": 48,
+      "byte_count": 192,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "91b30bd96f589fff34365629bb14bbb4788a283f6e5ee935e60dce7212721d19"
+    },
+    "probs": {
+      "file": "probs.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        2,
+        4,
+        3,
+        3
+      ],
+      "element_count": 72,
+      "byte_count": 288,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "97c49681741f3f504cf3dd7e8879f27236cf3161a95f84b878da3d4155b4e7ce"
+    },
+    "expected": {
+      "file": "expected.f32",
+      "dtype": "float32",
+      "cpp_type": "float",
+      "shape": [
+        2,
+        3,
+        4,
+        4
+      ],
+      "element_count": 96,
+      "byte_count": 384,
+      "byte_order": "little",
+      "order": "C",
+      "sha256": "677ae3dfb81b30d17971bdb328582d7cc780882dced32b2c6e1b1b247901c68c"
+    }
+  }
+}

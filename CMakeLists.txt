@@ -636,4 +636,51 @@ if(BUILD_TESTING)
   set_tests_properties(softmax PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
+
+  # --- LLMetalGqaSmoke ---
+
+  add_executable(LLMetalGqaSmoke)
+
+  target_sources(LLMetalGqaSmoke
+    PRIVATE
+      tests/gqa_smoke.cpp
+      src/cpu/gqa.cpp
+      src/cpu/softmax.cpp
+      src/metal_context.mm
+      src/tensor.mm
+      src/metal_job.mm
+  )
+
+  target_include_directories(LLMetalGqaSmoke
+    PRIVATE
+      include
+  )
+
+  set_target_properties(LLMetalGqaSmoke PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+
+    OBJCXX_STANDARD 20
+    OBJCXX_STANDARD_REQUIRED ON
+    OBJCXX_EXTENSIONS OFF
+  )
+
+  target_compile_options(LLMetalGqaSmoke PRIVATE
+    "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+
+  target_link_libraries(LLMetalGqaSmoke
+    PRIVATE
+      "-framework Metal"
+      "-framework Foundation"
+      "-framework MetalPerformanceShaders"
+  )
+
+  add_dependencies(LLMetalGqaSmoke MetalLibs)
+
+  add_test(NAME gqa COMMAND LLMetalGqaSmoke)
+  set_tests_properties(gqa PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
 endif()
