@@ -6,6 +6,7 @@
 #include "llmetal/io/reader.hpp"
 
 #include <iostream>
+#include <string>
 
 using uint = std::uint32_t;
 
@@ -13,16 +14,15 @@ int main() {
     try {
         const std::filesystem::path fixture_directory = "./tests/fixtures/gqa_prefill";
 
-        // Shapes from manifest.json:
-        // q:        [2, 3, 4, 4] (B, S, NQ, D)
-        // k:        [2, 3, 2, 4] (B, S, NKV, D)
-        // v:        [2, 3, 2, 4] (B, S, NKV, D)
-        // expected: [2, 3, 4, 4] (B, S, NQ, D)
+        // q:        [2, 7, 6, 4] (B, S, NQ, D)
+        // k:        [2, 7, 3, 4] (B, S, NKV, D)
+        // v:        [2, 7, 3, 4] (B, S, NKV, D)
+        // expected: [2, 7, 6, 4] (B, S, NQ, D)
         
         constexpr uint B = 2;
-        constexpr uint S = 3;
-        constexpr uint NQ = 4;
-        constexpr uint NKV = 2;
+        constexpr uint S = 7;
+        constexpr uint NQ = 6;
+        constexpr uint NKV = 3;
         constexpr uint D = 4;
 
         uint q_count = B * S * NQ * D;
@@ -49,16 +49,27 @@ int main() {
             return 1;
         }
 
-        // Verify cpu flash oracle
-        llmetal::CpuTensor<float> output_tensor_cpu_flash(q_shape);
-        llmetal::cpu::gqaPrefillFlash(q_tensor_cpu, k_tensor_cpu, v_tensor_cpu, output_tensor_cpu_flash);
+        // Verify cpu flash oracle with different tiles
+        for (auto BQ : { 1, 2, 4, 7, 8}) {
+            for (auto BK : { 1, 2, 4, 7, 8}) {
 
-        // Verify cpu oracle.
-        result = verify_equal(output_tensor_cpu_flash, expected_tensor_cpu);
-
-        if (!result) {
-            std::cerr << "gqa flash prefill test failed - cpu oracle not matching." << '\n';
-            return 1;
+                llmetal::CpuTensor<float> output_tensor_cpu_flash(q_shape);
+                llmetal::cpu::gqaPrefillFlash(q_tensor_cpu,
+                                              k_tensor_cpu,
+                                              v_tensor_cpu,
+                                              output_tensor_cpu_flash,
+                                              BQ, BK);
+        
+                // Verify cpu oracle.
+                result = verify_equal(output_tensor_cpu_flash, expected_tensor_cpu);
+                    
+                if (!result) {
+                    std::cerr << "gqa flash prefill test failed - cpu oracle not matching for BQ, BK " 
+                              << std::to_string(BQ) << " "
+                              << std::to_string(BK) << '\n';
+                    return 1;
+                }
+            }
         }
 
         // llmetal::MetalContext context;

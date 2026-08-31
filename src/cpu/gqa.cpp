@@ -43,68 +43,88 @@ void gqaPrefillFlash(
 
     const uint repeats = NQ / NKV;
     const float scale = std::powf(D, -0.5);
-    std::vector<float> block_scales(BK);
-    // Per-query-token D row accumulator
-    std::vector<float> acc(D);
+    // Accumulator per-query-token
+    std::vector<float> qblock_max(BQ);
+    std::vector<float> qblock_sum(BQ);
+    std::vector<float> qblock_acc(BQ * D);
+    // Accumulator per-key-block
+    std::vector<float> kblock_max(BQ);
+    std::vector<float> kblock_sum(BQ);
+    std::vector<float> kblock_dot(BQ * BK);
     for (uint b = 0; b < B; ++b) {
         for (uint qh = 0; qh < NQ; ++qh) {
             uint kvh = qh / repeats;
 
-            // Flash attention per query token
-            for (uint qs = 0; qs < S; ++qs) {
-                uint q_offset = ((b * S + qs) * NQ + qh) * D;
+            
+            // Flash attention per block of query tokens and block of keys
+            for (uint q0 = 0; q0 < S; q0 += BQ) {
+                uint qn = std::min(BQ, S - q0);
 
-                // Keep running max and sum of exp, and zero the row accumulator
-                float max_row = -std::numeric_limits<float>::infinity();
-                float sum_row = 0.0f;
-                for (uint d = 0; d < D; ++d) acc[d] = 0.0f;
+                // Reset the per-query-token running accumulators
+                for (uint i = 0; i < BQ; ++i) {
+                    qblock_max[i] = -std::numeric_limits<float>::infinity();
+                    qblock_sum[i] = 0.0f;
+                }
+                for (uint i = 0; i < BQ * D; ++i) qblock_acc[i] = 0.0f;
 
-                // Causal dot for query with every block of keys
-                for (uint k0 = 0; k0 <= qs; k0 += BK) {
-                    uint kn = std::min(qs - k0 + 1, BK);
+                for (uint k0 = 0; k0 < q0 + qn; k0 += BK) {
+                    // Loop through the values in the block to accumulate scales (dot products) and max
+                    for (uint qs = 0; qs < qn; ++qs) {
+                        if (k0 > q0 + qs) continue; // No keys to attend to in this block
+                        uint q_offset = ((b * S + (q0 + qs)) * NQ + qh) * D;
+                        uint kn = std::min(BK, q0 + qs - k0 + 1);
 
-                    float max_block = -std::numeric_limits<float>::infinity();
-                    for (uint ks = 0; ks < kn; ++ks) {
-                        uint kv_offset = ((b * S + (k0 + ks)) * NKV + kvh) * D;
-                        
-                        block_scales[ks] = 0.0f;
-                        for (uint d = 0; d < D; ++d)
-                            block_scales[ks] += q[q_offset + d] * k[kv_offset + d];
-                        block_scales[ks] *= scale;
-                        max_block = std::max(max_block, block_scales[ks]);
-                    }
+                        kblock_max[qs] = -std::numeric_limits<float>::infinity();
+                        for (uint ks = 0; ks < kn; ++ks) {
+                            uint k_offset = ((b * S + (k0 + ks)) * NKV + kvh) * D;
+                            uint dot_offset = qs * BK + ks;
 
-                    // Compute the update factors for this block
-                    float max_curr = std::max(max_row, max_block);
-                    // Correction factor
-                    float alpha = max_row != NEG_INF ? std::exp(max_row - max_curr) : 0.0f;
-                    // Current value token factor
-                    float sum_block = 0.0f;
-                    for (uint ks = 0; ks < kn; ++ks) {
-                        block_scales[ks] = std::exp(block_scales[ks] - max_curr);
-                        sum_block += block_scales[ks];
-                    }
+                            kblock_dot[dot_offset] = 0.0f;
+                            for (uint d = 0; d < D; ++d) {
+                                kblock_dot[dot_offset] += q[q_offset + d] * k[k_offset + d];
+                            }
+                            kblock_dot[dot_offset] *= scale;
+                            kblock_max[qs] = std::max(kblock_max[qs], kblock_dot[dot_offset]);
+                        }
 
-                    // Update accumulators
-                    sum_row = sum_row * alpha + sum_block;
-                    max_row = max_curr;
-                    // Correct sum so far by alpha
-                    for (uint d = 0; d < D; ++d) {
-                        acc[d] = acc[d] * alpha;
-                    }
-                    // Add all the new values from this block
-                    for (uint ks = 0; ks < kn; ++ks) {
-                        uint kv_offset = ((b * S + (k0 + ks)) * NKV + kvh) * D;
-                        // Update accumulator
+                        // Compute the update factors for this block
+                        float max_curr = std::max(qblock_max[qs], kblock_max[qs]);
+                        // Correction factor
+                        float alpha = qblock_max[qs] != NEG_INF ? std::exp(qblock_max[qs] - max_curr) : 0.0f;
+                        // Current value token factor
+                        kblock_sum[qs] = 0.0f;
+                        for (uint ks = 0; ks < kn; ++ks) {
+                            uint dot_offset = qs * BK + ks;
+                            kblock_dot[dot_offset] = std::exp(kblock_dot[dot_offset] - max_curr);
+                            kblock_sum[qs] += kblock_dot[dot_offset];
+                        }
+
+                        // Update accumulators
+                        qblock_sum[qs] = qblock_sum[qs] * alpha + kblock_sum[qs];
+                        qblock_max[qs] = max_curr;
+                        // Correct the sum so far by alpha
                         for (uint d = 0; d < D; ++d) {
-                            acc[d] +=  v[kv_offset + d] * block_scales[ks];
+                            qblock_acc[qs * D + d] = qblock_acc[qs * D + d] * alpha;
+                        }
+
+                        // Add all the new values from this block
+                        for (uint ks = 0; ks < kn; ++ks) {
+                            uint v_offset = ((b * S + (k0 + ks)) * NKV + kvh) * D;
+                            uint dot_offset = qs * BK + ks;
+                            for (uint d = 0; d < D; ++d) {
+                                qblock_acc[qs * D + d] +=  v[v_offset + d] * kblock_dot[dot_offset];
+                            }
                         }
                     }
                 }
 
-                // Final scaling of accumulator
-                float inv_sum = 1.0f / sum_row;
-                for (uint d = 0; d < D; ++d) output[q_offset + d] = inv_sum * acc[d];
+                for (uint qs = 0; qs < qn; ++qs) {
+                    uint q_offset = ((b * S + (q0 + qs)) * NQ + qh) * D;
+                    
+                    // Final scaling of accumulator
+                    float inv_sum = 1.0f / qblock_sum[qs];
+                    for (uint d = 0; d < D; ++d) output[q_offset + d] = inv_sum * qblock_acc[qs * D + d];
+                }
             }
         }
     }
