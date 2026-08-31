@@ -1,5 +1,6 @@
 #include "llmetal/cpu/gqa.hpp"
 #include "llmetal/cpu/softmax.hpp"
+#include "llmetal/tensor.hpp"
 #include <string>
 
 namespace llmetal::cpu {
@@ -43,81 +44,123 @@ void gqaPrefillFlash(
 
     const uint repeats = NQ / NKV;
     const float scale = std::powf(D, -0.5);
+    // Tile to emulate shared memory
+    std::vector<float> q_tile(BQ * D);
+    std::vector<float> k_tile(BK * D);
+    std::vector<float> v_tile(BK * D);
     // Accumulator per-query-token
     std::vector<float> qblock_max(BQ);
     std::vector<float> qblock_sum(BQ);
     std::vector<float> qblock_acc(BQ * D);
-    // Accumulator per-key-block
-    std::vector<float> kblock_max(BQ);
-    std::vector<float> kblock_sum(BQ);
+    // Scales per-key-block
     std::vector<float> kblock_dot(BQ * BK);
     for (uint b = 0; b < B; ++b) {
         for (uint qh = 0; qh < NQ; ++qh) {
             uint kvh = qh / repeats;
-
             
-            // Flash attention per block of query tokens and block of keys
+            // === Q-tile: Flash attention per block of query tokens and block of keys ===
             for (uint q0 = 0; q0 < S; q0 += BQ) {
                 uint qn = std::min(BQ, S - q0);
 
-                // Reset the per-query-token running accumulators
+                // --- Load: load values into q tile ---
+                for (uint qs = 0; qs < qn; ++qs) {
+                    uint qt_offset = qs * D;
+                    uint q_offset = ((b * S + (q0 + qs)) * NQ + qh) * D;
+                    for (uint d = 0; d < D; ++d) {
+                        q_tile[qt_offset + d] = q[q_offset + d];
+                    }
+                }
+                // --- Init: Reset the per-query-block running accumulators ---
                 for (uint i = 0; i < BQ; ++i) {
                     qblock_max[i] = -std::numeric_limits<float>::infinity();
                     qblock_sum[i] = 0.0f;
                 }
                 for (uint i = 0; i < BQ * D; ++i) qblock_acc[i] = 0.0f;
 
+                // === K-block Perform flash attention for this block ===
                 for (uint k0 = 0; k0 < q0 + qn; k0 += BK) {
-                    // Loop through the values in the block to accumulate scales (dot products) and max
+                    
+                    // --- Load: load values into k/v tiles
+                    // Compute upper bound - for ks >= bk, values should be 0
+                    uint bk = std::min(BK, S - k0);
+                    for (uint ks = 0; ks < bk; ++ks) {
+                        uint kt_offset = ks * D;
+                        uint k_offset = ((b * S + (k0 + ks)) * NKV + kvh) * D;
+                        for (uint d = 0; d < D; ++d) {
+                            k_tile[kt_offset + d] = k[k_offset + d];
+                            v_tile[kt_offset + d] = v[k_offset + d];
+                        }
+                    }
+                    for (uint ks = bk; ks < BK; ++ks) {
+                        uint kt_offset = ks * D;
+                        for (uint d = 0; d < D; ++d) {
+                            k_tile[kt_offset + d] = v_tile[kt_offset + d] = 0.0f;
+                        }
+                    }
+
+                    // --- GEMM: Compute scales for q-k pairs in the block. ---
                     for (uint qs = 0; qs < qn; ++qs) {
-                        if (k0 > q0 + qs) continue; // No keys to attend to in this block
-                        uint q_offset = ((b * S + (q0 + qs)) * NQ + qh) * D;
-                        uint kn = std::min(BK, q0 + qs - k0 + 1);
-
-                        kblock_max[qs] = -std::numeric_limits<float>::infinity();
-                        for (uint ks = 0; ks < kn; ++ks) {
-                            uint k_offset = ((b * S + (k0 + ks)) * NKV + kvh) * D;
+                        uint qt_offset = qs * D;
+                        for (uint ks = 0; ks < BK; ++ks) {
+                            uint kt_offset = ks * D;
                             uint dot_offset = qs * BK + ks;
-
+                            
+                            // Dot product
                             kblock_dot[dot_offset] = 0.0f;
                             for (uint d = 0; d < D; ++d) {
-                                kblock_dot[dot_offset] += q[q_offset + d] * k[k_offset + d];
+                                kblock_dot[dot_offset] += q_tile[qt_offset + d] * k_tile[kt_offset + d];
                             }
                             kblock_dot[dot_offset] *= scale;
-                            kblock_max[qs] = std::max(kblock_max[qs], kblock_dot[dot_offset]);
+                        }
+                    }
+                    // Apply causal Mask
+                    for (uint qs = 0; qs < qn; ++qs)
+                        for (uint ks = 0; ks < BK; ++ks)
+                            if (k0 + ks > q0 + qs) kblock_dot[qs * BK + ks] = NEG_INF; 
+
+                    // --- Softmax: Row-wise ---
+                    for (uint qs = 0; qs < qn; ++qs) {
+                        // Compute max from this block
+                        float block_max = -std::numeric_limits<float>::infinity();
+                        for (uint ks = 0; ks < BK; ++ks) {
+                            block_max = std::max(block_max, kblock_dot[qs * BK + ks]);
                         }
 
-                        // Compute the update factors for this block
-                        float max_curr = std::max(qblock_max[qs], kblock_max[qs]);
+                        // Compute the update factors from this block
+                        float max_curr = std::max(qblock_max[qs], block_max);
                         // Correction factor
                         float alpha = qblock_max[qs] != NEG_INF ? std::exp(qblock_max[qs] - max_curr) : 0.0f;
                         // Current value token factor
-                        kblock_sum[qs] = 0.0f;
-                        for (uint ks = 0; ks < kn; ++ks) {
+                        float block_sum = 0.0f;
+                        for (uint ks = 0; ks < BK; ++ks) {
                             uint dot_offset = qs * BK + ks;
                             kblock_dot[dot_offset] = std::exp(kblock_dot[dot_offset] - max_curr);
-                            kblock_sum[qs] += kblock_dot[dot_offset];
+                            block_sum += kblock_dot[dot_offset];
                         }
 
                         // Update accumulators
-                        qblock_sum[qs] = qblock_sum[qs] * alpha + kblock_sum[qs];
+                        qblock_sum[qs] = qblock_sum[qs] * alpha + block_sum;
                         qblock_max[qs] = max_curr;
-                        // Correct the sum so far by alpha
                         for (uint d = 0; d < D; ++d) {
                             qblock_acc[qs * D + d] = qblock_acc[qs * D + d] * alpha;
                         }
+                    }
 
-                        // Add all the new values from this block
-                        for (uint ks = 0; ks < kn; ++ks) {
-                            uint v_offset = ((b * S + (k0 + ks)) * NKV + kvh) * D;
+                    // --- GEMM: Output ---
+                    for (uint qs = 0; qs < qn; ++qs) {
+                        uint qt_offset = qs * D;
+                        for (uint ks = 0; ks < BK; ++ks) {
+                            uint vt_offset = ks * D;
                             uint dot_offset = qs * BK + ks;
+
                             for (uint d = 0; d < D; ++d) {
-                                qblock_acc[qs * D + d] +=  v[v_offset + d] * kblock_dot[dot_offset];
+                                qblock_acc[qt_offset + d] +=  v_tile[vt_offset + d] * kblock_dot[dot_offset];
                             }
                         }
                     }
                 }
 
+                // Final scaling per row
                 for (uint qs = 0; qs < qn; ++qs) {
                     uint q_offset = ((b * S + (q0 + qs)) * NQ + qh) * D;
                     

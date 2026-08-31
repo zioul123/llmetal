@@ -1,6 +1,6 @@
 #include <cstdint>
 #include <llmetal/tensor.hpp>
-#include "llmetal/metal_context.hpp"
+// #include "llmetal/metal_context.hpp"
 #include "llmetal/cpu/gqa.hpp"
 #include "llmetal/verification/equality.hpp"
 #include "llmetal/io/reader.hpp"
