@@ -13,9 +13,10 @@ void gqaPrefillFlash(
     const CpuTensor<float>& q, // [B, S, NQ (num query heads), D (hidden dim per head)]
     const CpuTensor<float>& k, // [B, S, NKV, D]
     const CpuTensor<float>& v, // [B, S, NKV, D]
-    CpuTensor<float>& output   // [B, S, NQ, D]
+    CpuTensor<float>& output,   // [B, S, NQ, D]
+    const uint BQ,
+    const uint BK
 ) {
-
     if (q.shape().rank() != 4) throw std::invalid_argument("Invalid q shape rank, got " + std::to_string(q.shape().rank()));
     if (k.shape().rank() != 4) throw std::invalid_argument("Invalid k shape rank, got " + std::to_string(k.shape().rank()));
     if (v.shape().rank() != 4) throw std::invalid_argument("Invalid v shape rank, got " + std::to_string(v.shape().rank()));
@@ -42,6 +43,7 @@ void gqaPrefillFlash(
 
     const uint repeats = NQ / NKV;
     const float scale = std::powf(D, -0.5);
+    std::vector<float> block_scales(BK);
     // Per-query-token D row accumulator
     std::vector<float> acc(D);
     for (uint b = 0; b < B; ++b) {
@@ -57,33 +59,50 @@ void gqaPrefillFlash(
                 float sum_row = 0.0f;
                 for (uint d = 0; d < D; ++d) acc[d] = 0.0f;
 
-                // Causal dot for query with every key
-                for (uint ks = 0; ks <= qs; ++ks) {
-                    uint kv_offset = ((b * S + ks) * NKV + kvh) * D;
-                    
-                    float curr_scale = 0.0f;
-                    for (uint d = 0; d < D; ++d)
-                        curr_scale += q[q_offset + d] * k[kv_offset + d];
-                    curr_scale *= scale;
+                // Causal dot for query with every block of keys
+                for (uint k0 = 0; k0 <= qs; k0 += BK) {
+                    uint kn = std::min(qs - k0 + 1, BK);
 
-                    // Compute the update factors
-                    float max_curr = std::max(max_row, curr_scale);
+                    float max_block = -std::numeric_limits<float>::infinity();
+                    for (uint ks = 0; ks < kn; ++ks) {
+                        uint kv_offset = ((b * S + (k0 + ks)) * NKV + kvh) * D;
+                        
+                        block_scales[ks] = 0.0f;
+                        for (uint d = 0; d < D; ++d)
+                            block_scales[ks] += q[q_offset + d] * k[kv_offset + d];
+                        block_scales[ks] *= scale;
+                        max_block = std::max(max_block, block_scales[ks]);
+                    }
+
+                    // Compute the update factors for this block
+                    float max_curr = std::max(max_row, max_block);
                     // Correction factor
                     float alpha = max_row != NEG_INF ? std::exp(max_row - max_curr) : 0.0f;
                     // Current value token factor
-                    float beta = std::exp(curr_scale - max_curr);
+                    float sum_block = 0.0f;
+                    for (uint ks = 0; ks < kn; ++ks) {
+                        block_scales[ks] = std::exp(block_scales[ks] - max_curr);
+                        sum_block += block_scales[ks];
+                    }
 
                     // Update accumulators
-                    sum_row = sum_row * alpha + beta;
+                    sum_row = sum_row * alpha + sum_block;
                     max_row = max_curr;
-
-                    // Update accumulator
+                    // Correct sum so far by alpha
                     for (uint d = 0; d < D; ++d) {
-                        acc[d] = acc[d] * alpha + v[kv_offset + d] * beta;
+                        acc[d] = acc[d] * alpha;
+                    }
+                    // Add all the new values from this block
+                    for (uint ks = 0; ks < kn; ++ks) {
+                        uint kv_offset = ((b * S + (k0 + ks)) * NKV + kvh) * D;
+                        // Update accumulator
+                        for (uint d = 0; d < D; ++d) {
+                            acc[d] +=  v[kv_offset + d] * block_scales[ks];
+                        }
                     }
                 }
 
-                // Final scaling
+                // Final scaling of accumulator
                 float inv_sum = 1.0f / sum_row;
                 for (uint d = 0; d < D; ++d) output[q_offset + d] = inv_sum * acc[d];
             }

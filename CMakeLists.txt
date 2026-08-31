@@ -2,6 +2,16 @@ cmake_minimum_required(VERSION 3.25...4.0)
 
 project(LLMetal LANGUAGES CXX OBJCXX)
 
+add_compile_definitions(
+  $<$<CONFIG:Debug>:_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG>
+)
+# Use this when debugging indices
+option(LLMETAL_ENABLE_ASAN "Build with AddressSanitizer" OFF)
+if(LLMETAL_ENABLE_ASAN)
+  add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address)
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_executable(LLMetal)
